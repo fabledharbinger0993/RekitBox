@@ -4,21 +4,22 @@ rekordbox-toolkit / audio_processor.py
 Analyses and normalises audio files in-place. No database interaction.
 
 Operations per file (each independently skippable):
-  1. BPM detection    — aubio tempo, written to TBPM tag
-  2. Key detection    — Krumhansl-Schmuckler via librosa chroma, written to TKEY (Camelot)
-  3. Loudness check   — pyloudnorm EBU R128 measurement
-  4. Normalisation    — ffmpeg volume filter if outside tolerance, in-place replacement
+1. BPM detection via librosa beat tracking, written to TBPM tag
+2. Key detection via librosa chroma + Krumhansl-Schmuckler, written to TKEY (Camelot)
+3. Loudness check via pyloudnorm (EBU R128 measurement)
+4. Normalisation via ffmpeg volume filter if outside tolerance, in-place replacement
 
 Design rules:
-  - Existing tags are NEVER overwritten unless force=True is passed
-  - Original files are never deleted until the replacement is verified
-  - All failures are logged and returned in ProcessResult — nothing crashes the batch
-  - MP3s are re-encoded at 320kbps CBR if normalisation is applied
-  - AIFFs are re-encoded losslessly (pcm_s16le or pcm_s24le, matching source bit depth)
+- Existing tags are NEVER overwritten unless force=True is passed
+- Original files are never deleted until the replacement is verified
+- All failures are logged and returned in ProcessResult; nothing crashes the batch
+- MP3s are re-encoded at 320kbps CBR if normalisation is applied
+- AIFFs are re-encoded losslessly (pcm_s16le or pcm_s24le, matching source bit depth)
 
 Target loudness: -8.0 LUFS (DJ standard)
-Tolerance:        ±0.5 LUFS (skip normalisation if within this window)
+Tolerance: 0.5 LUFS (skip normalisation if within this window)
 """
+
 
 import logging
 import os
@@ -29,7 +30,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import aubio
 import librosa
 import numpy as np
 import pyloudnorm as pyln
@@ -41,28 +41,41 @@ from config import AUDIO_EXTENSIONS, BPM_MAX, BPM_MIN, LUFS_TOLERANCE, TARGET_LU
 
 log = logging.getLogger(__name__)
 
-# ─── Constants ────────────────────────────────────────────────────────────────
-
-# TARGET_LUFS and LUFS_TOLERANCE are loaded from user config via config.py.
-# To change the target, run: python3 cli.py setup --update
 ANALYSIS_DURATION: float = 90.0
-BPM_HOP_SIZE: int = 512
-BPM_WIN_SIZE: int = 1024
-
-_LIBROSA_TO_CAMELOT: dict[str, str] = {
-    "Amin": "8A",  "Emin": "9A",   "Bmin": "10A", "F#min": "11A",
-    "C#min": "12A","G#min": "1A",  "D#min": "2A", "A#min": "3A",
-    "Fmin": "4A",  "Cmin": "5A",   "Gmin": "6A",  "Dmin": "7A",
-    "Cmaj": "8B",  "Gmaj": "9B",   "Dmaj": "10B", "Amaj": "11B",
-    "Emaj": "12B", "Bmaj": "1B",   "F#maj": "2B", "C#maj": "3B",
-    "G#maj": "4B", "D#maj": "5B",  "A#maj": "6B", "Fmaj": "7B",
+LIBROSA_TO_CAMELOT: dict[str, str] = {
+    "Amin": "8A", "Emin": "9A", "Bmin": "10A", "F#min": "11A", "C#min": "12A",
+    "G#min": "1A", "D#min": "2A", "A#min": "3A", "Fmin": "4A", "Cmin": "5A",
+    "Gmin": "6A", "Dmin": "7A",
+    "Cmaj": "8B", "Gmaj": "9B", "Dmaj": "10B", "Amaj": "11B", "Emaj": "12B",
+    "Bmaj": "1B", "F#maj": "2B", "C#maj": "3B", "G#maj": "4B", "D#maj": "5B",
+    "A#maj": "6B", "Fmaj": "7B",
 }
 
-_KS_MAJOR = np.array([6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88])
-_KS_MINOR = np.array([6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17])
-_NOTES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
+KS_MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+KS_MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
+def _detect_bpm(path: Path) -> float | None:
+    try:
+        y, sr = librosa.load(str(path), duration=ANALYSIS_DURATION, mono=True)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
 
+        bpm = float(np.squeeze(tempo))
+
+        if BPM_MIN <= bpm <= BPM_MAX:
+            return round(bpm, 2)
+
+        log.warning(
+            "BPM %s out of range (%s–%s) for %s",
+            bpm,
+            BPM_MIN,
+            BPM_MAX,
+            path.name,
+        )
+        return None
+    except Exception as e:
+        log.error("BPM detection failed for %s: %s", path.name, e)
+        return None
 # ─── Result dataclass ─────────────────────────────────────────────────────────
 
 @dataclass
@@ -89,25 +102,26 @@ class ProcessResult:
 
 def _detect_bpm(path: Path) -> float | None:
     try:
-        src = aubio.source(str(path), hop_size=BPM_HOP_SIZE)
-        tempo = aubio.tempo("default", BPM_WIN_SIZE, BPM_HOP_SIZE, src.samplerate)
-        beats: list[float] = []
-        while True:
-            samples, read = src()
-            if tempo(samples):
-                beats.append(tempo.get_bpm())
-            if read < BPM_HOP_SIZE:
-                break
-        if not beats:
-            return None
-        bpm = float(np.median(beats))
+        y, sr = librosa.load(str(path), duration=ANALYSIS_DURATION, mono=True)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+
+        bpm = float(np.squeeze(tempo))
+
         if BPM_MIN <= bpm <= BPM_MAX:
             return round(bpm, 2)
-        log.warning("BPM %s out of range (%s–%s) for %s", bpm, BPM_MIN, BPM_MAX, path.name)
+
+        log.warning(
+            "BPM %s out of range (%s–%s) for %s",
+            bpm,
+            BPM_MIN,
+            BPM_MAX,
+            path.name,
+        )
         return None
     except Exception as e:
         log.error("BPM detection failed for %s: %s", path.name, e)
         return None
+
 
 
 # ─── Key detection ────────────────────────────────────────────────────────────

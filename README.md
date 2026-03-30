@@ -82,8 +82,7 @@ The CSV contains: group_id, action (KEEP / REVIEW_REMOVE), rank, file_path, file
 process
 
 
-Runs BPM detection (aubio tempo), key detection (Krumhansl-Schmuckler via librosa chroma), and loudness normalisation (EBU R128 via pyloudnorm + ffmpeg) on all audio files under PATH.
-
+BPM is calculated by librosa beat tracking, which analyzes the actual audio waveform for beat patterns rather than guessing from the filename.
 
 
 Normalisation target is −8.0 LUFS (DJ standard) with a ±0.5 LUFS tolerance. MP3s are re-encoded at 320 kbps CBR; AIFFs are re-encoded losslessly matching source bit depth. Originals are kept as .bak during the operation and deleted only after the replacement is verified.

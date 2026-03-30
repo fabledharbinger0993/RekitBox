@@ -19,7 +19,7 @@ All write commands enforce:
 
 All module imports are deferred inside command handlers. This means
 `python3 cli.py --help` runs instantly without loading pyrekordbox,
-mutagen, librosa, aubio, etc.
+mutagen, librosa, etc.
 """
 
 import argparse

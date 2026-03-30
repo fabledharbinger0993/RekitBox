@@ -238,22 +238,11 @@ DEPENDENCIES: list[tuple[str, object, str, str, str]] = [
         "import, process",
     ),
     (
-        "aubio",
-        lambda: _has_python_module("aubio"),
-        _install_hint(
-            mac="brew install aubio",
-            win="",   # no winget package; pip wheel available
-            linux="sudo apt install python3-aubio  (or pip install aubio)",
-        ),
-        "pip install aubio",
-        "process (BPM detection)",
-    ),
-    (
         "librosa",
-        lambda: _has_python_module("librosa"),
+        lambda: has_python_module("librosa"),
         "",
         "pip install librosa",
-        "process (key detection)",
+        "process (BPM + key detection)",
     ),
     (
         "pyloudnorm",

@@ -814,10 +814,16 @@ body.log-open #owl-hover-panel { bottom: calc(var(--log-h) + 74px); }
       <details>
         <summary>How does it detect BPM and key?</summary>
         <div class="explain-body">
-          <p><strong>BPM</strong> is calculated by aubio, which analyzes the actual audio waveform for beat onset patterns — not guessing from the filename. Result is sanity-checked (must be between 30–300 BPM).</p>
-          <p><strong>Key</strong> uses the Krumhansl-Schmuckler algorithm on the audio's chroma features via librosa. The result is translated to whichever notation RekordBox uses (Camelot, Open Key, or standard — whatever's already in your database).</p>
-          <p>Files that already have a BPM or key tag are <strong>skipped by default</strong>. Use <em>Force Overwrite</em> only if you want to replace existing values.</p>
+          <p><strong>BPM</strong> is calculated by librosa beat tracking, which analyzes the actual audio waveform for beat
+            patterns — not guessing from the filename. Result is sanity-checked (must be between 30–300 BPM).</p>
+          <p><strong>Key</strong> uses the Krumhansl-Schmuckler algorithm on the audio's chroma features via librosa. The
+            result is translated to whichever notation RekordBox uses (Camelot, Open Key, or standard — whatever's already
+            in your database).</p>
+          <p>Files that already have a BPM or key tag are <strong>skipped by default</strong>. Use <em>Force Overwrite</em>
+            only if you want to replace existing values.</p>
         </div>
+      </details>
+    </div>
       </details>
       <details>
         <summary>What could go wrong?</summary>
@@ -1921,12 +1927,12 @@ const GLOSSARY = [
 <p>RekordBox stores the path of every track in its database. If you move a file without telling RekordBox, the path in the database points to nowhere — the track shows as missing. The Relocate tool fixes this.</p>`},
 
   // ── Audio ──────────────────────────────────────────────────────────────────
-  { id:'bpm', cat:'Audio', term:'BPM',
-    short:'Beats Per Minute — how fast a track is',
-    body:`<p><strong>Beats Per Minute</strong> — the tempo of a track. A kick drum at 128 BPM fires 128 times per minute.</p>
+  {
+    id: 'bpm', cat: 'Audio', term: 'BPM',
+    short: 'Beats Per Minute — how fast a track is',
+    body: `<p><strong>Beats Per Minute</strong> — the tempo of a track. A kick drum at 128 BPM fires 128 times per minute.</p>
 <p>RekordBox stores BPM internally as BPM × 100 (so 128.0 BPM is stored as 12800). SuperBox handles that conversion automatically so you never see raw database values.</p>
-<p>Detection uses <strong>aubio</strong>, which analyzes the actual audio waveform for beat patterns — not guessing from the filename.</p>`},
-
+<p>Detection uses <strong>librosa</strong>, which analyzes the actual audio waveform for beat patterns — not guessing from the filename.</p>`},
   { id:'key', cat:'Audio', term:'Musical Key',
     short:'The harmonic "home base" of a track',
     body:`<p>The musical scale a track is built around — determines which other tracks it will sound harmonically compatible with when mixed.</p>
