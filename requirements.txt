@@ -22,7 +22,7 @@ librosa==0.10
 pyloudnorm==0.1.1
 # Loudness measurement (EBU R128 / LUFS)
 
-soundfile==0.12
+soundfile>=0.12.1
 # Audio file I/O used by pyloudnorm and normalisation verification
 
 pyacoustid==1.3
