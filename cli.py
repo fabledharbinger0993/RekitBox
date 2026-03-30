@@ -76,6 +76,8 @@ def cmd_import(args: argparse.Namespace) -> None:
         log.error("PATH is not a directory: %s", root)
         sys.exit(1)
 
+    resume: bool = getattr(args, "resume", False)
+
     if args.dry_run:
         log.info("DRY RUN — no writes will occur")
         try:
@@ -86,10 +88,12 @@ def cmd_import(args: argparse.Namespace) -> None:
             log.exception("Dry-run import failed")
             sys.exit(1)
     else:
+        if resume:
+            log.info("Resume mode enabled — previously committed files will be skipped")
         log.info("Importing from: %s", root)
         try:
             with write_db(DJMT_DB) as db:
-                report = import_directory(root, db, dry_run=False)
+                report = import_directory(root, db, dry_run=False, resume=resume)
             print(report.summary())
             if report.failed > 0:
                 log.warning("%d tracks failed to import — see log above", report.failed)
@@ -368,6 +372,7 @@ Examples:
   python3 cli.py audit
   python3 cli.py import "/Volumes/DJMT/DJMT PRIMARY" --dry-run
   python3 cli.py import "/Volumes/DJMT/DJMT PRIMARY"
+  python3 cli.py import "/Volumes/DJMT/DJMT PRIMARY" --resume
   python3 cli.py link "/Volumes/DJMT/DJMT PRIMARY"
   python3 cli.py relocate /old/path /new/path
   python3 cli.py duplicates "/Volumes/DJMT/DJMT PRIMARY" --output ~/Desktop/dupes.csv
@@ -424,6 +429,17 @@ Examples:
         "--dry-run",
         action="store_true",
         help="Scan and report without writing to the database",
+    )
+    p_import.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume an interrupted import. Skips files that were successfully "
+            "committed in a previous run by reading "
+            "~/.rekordbox-toolkit/import_progress.json. "
+            "Failed files from the previous run are always retried. "
+            "Progress is cleared automatically on clean completion."
+        ),
     )
     p_import.set_defaults(func=cmd_import)
 
