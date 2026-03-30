@@ -158,27 +158,38 @@ def _import_track(track: TrackInfo, db: Rekordbox6Database) -> TrackImportResult
         kwargs["TrackNo"] = track.track_number
 
     # ── Handle .aif extension ──
-    # pyrekordbox's FileType enum only has AIFF (for .aiff), not AIF.
-    # add_content derives FileType from path.suffix — ".aif" would raise ValueError.
-    # Solution: pass a Path with .aiff suffix so FileType resolves correctly,
-    # then override FolderPath in kwargs to preserve the real on-disk path.
+    # pyrekordbox's FileType enum recognises AIFF (.aiff) but not AIF (.aif).
+    # add_content derives FileType from path.suffix — ".aif" raises ValueError.
     #
-    # FRAGILITY NOTE: This assumes that add_content applies kwargs AFTER it
-    # auto-sets FolderPath from the path argument, so our kwarg wins. This is
-    # an internals assumption about the installed pyrekordbox version. If it
-    # ever breaks silently (DB gets .aiff paths for .aif files), the fix is to
-    # call setattr(content_row, 'FolderPath', str(actual_path)) after add_content
-    # returns. Verify by running: SELECT FolderPath FROM DjmdContent WHERE
-    # FolderPath LIKE '%.aif' LIMIT 5; — all results should end in .aif not .aiff.
+    # Workaround: pass a .aiff-suffixed path so FileType resolves, then correct
+    # FolderPath via setattr after the row is created.
+    #
+    # Why setattr and not kwargs["FolderPath"]?
+    # add_content calls DjmdContent.create(..., FolderPath=path_string, ..., **kwargs).
+    # If kwargs also contains FolderPath, Python raises:
+    #   TypeError: got multiple values for keyword argument 'FolderPath'
+    # setattr bypasses the call-site restriction and directly sets the ORM attribute
+    # on the already-created row before flush — safe and confirmed working.
+    #
+    # Verify after any import that includes .aif files:
+    #   SELECT FolderPath FROM DjmdContent WHERE FolderPath LIKE '%.aif' LIMIT 5;
+    # All results must end in .aif not .aiff. If any end in .aiff, the setattr failed.
     actual_path = track.path
     import_path = actual_path
-    if actual_path.suffix.lower() == ".aif":
+    is_aif = actual_path.suffix.lower() == ".aif"
+    if is_aif:
         import_path = actual_path.with_suffix(".aiff")
-        kwargs["FolderPath"] = str(actual_path)
 
     # ── Write to DB ──
     try:
         content_row = db.add_content(import_path, **kwargs)
+
+        # Correct the FolderPath for .aif files: add_content stored the .aiff
+        # path; set it back to the real on-disk .aif path before flush.
+        if is_aif:
+            setattr(content_row, "FolderPath", str(actual_path))
+            log.debug("FolderPath corrected for .aif: %s", actual_path.name)
+
         result.success = True
         result.content_id = str(content_row.ID)
         log.debug("Imported: %s (ID=%s)", actual_path.name, content_row.ID)
