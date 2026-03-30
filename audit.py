@@ -146,6 +146,8 @@ class AuditReport:
             if not items:
                 return []
             out = [f"", f"  ── {label} ──"]
+            if len(items) > cap:
+                out.append(f"  ({len(items)} total — showing first {cap})")
             for item in items[:cap]:
                 out.append(f"    {item}")
             if len(items) > cap:
