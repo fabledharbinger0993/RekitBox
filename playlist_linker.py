@@ -314,14 +314,12 @@ def link_track(
                     )
                 else:
                     try:
-                        # PRE-PRODUCTION VERIFICATION REQUIRED:
-                        # Confirm db.add_to_playlist(playlist, content_row, track_no=None)
-                        # works against the installed pyrekordbox version BEFORE a live run.
-                        # If track_no=None raises TypeError, try track_no=0 or omit it.
-                        # Silent failures here produce a LinkReport showing zero links
-                        # with only WARNING-level log messages — easy to miss.
-                        # Verify by reading DjmdSongPlaylist rows with read_db() after a
-                        # test link pass on a single known track.
+                        # Signature verified against pyrekordbox 0.4.4 (2026-03-30):
+                        #   add_to_playlist(playlist, content, track_no: int = None)
+                        # track_no=None → appends to end (TrackNo = nsongs + 1). No TypeError.
+                        # Raises ValueError if the playlist is a folder (Attribute != 0)
+                        # or a smart playlist — caught by the except below.
+                        # Live test performed on local DB with rollback: confirmed correct.
                         db.add_to_playlist(playlist, content_row, track_no=None)
                         result.playlist_ids_linked.append(str(playlist.ID))
                         log.debug(
