@@ -1405,21 +1405,51 @@ async function refreshStatus() {
 refreshStatus();
 setInterval(refreshStatus, 6000);
 
-/* ── Config prefill ────────────────────────────────────────────────────────── */
+/* ── Config prefill + localStorage persistence ─────────────────────────────── */
+const LS_PREFIX = 'superbox_path_';
+
+function lsSave(id) {
+  const el = document.getElementById(id);
+  if (el) localStorage.setItem(LS_PREFIX + id, el.value);
+}
+
+function lsLoad(id) {
+  return localStorage.getItem(LS_PREFIX + id) || '';
+}
+
 async function prefillDefaults() {
+  // Fields that map to the music root
+  const rootFields = [
+    'process-path','import-dry-path','import-path',
+    'link-path','normalize-path','dupes-path','relocate-new',
+  ];
+  // Fields that are optional overrides (audit root) — prefill but don't force
+  const optionalFields = ['audit-root','audit2-root'];
+  // Relocate old root — user-specific, just restore from localStorage
+  const freeFields = ['relocate-old','dupes-output'];
+
+  // Restore any previously saved value for every tracked field first
+  [...rootFields, ...optionalFields, ...freeFields].forEach(id => {
+    const saved = lsLoad(id);
+    const el = document.getElementById(id);
+    if (el && saved) el.value = saved;
+  });
+
+  // Then fill blanks from server config
   try {
     const res    = await fetch('/api/config');
     const config = await res.json();
-    const root   = config.music_root;
-    const ids = [
-      'audit-root','process-path','import-dry-path','import-path',
-      'link-path','audit2-root','normalize-path','dupes-path'
-    ];
-    ids.forEach(id => {
+    rootFields.forEach(id => {
       const el = document.getElementById(id);
-      if (el && !el.value) el.placeholder = root;
+      if (el && !el.value) el.value = config.music_root;
     });
   } catch (_) {}
+
+  // Save to localStorage whenever the user edits any path field
+  [...rootFields, ...optionalFields, ...freeFields].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => lsSave(id));
+  });
 }
 prefillDefaults();
 
