@@ -769,7 +769,7 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 /* ── Lightbulb / Welcome button ─────────────────────────────────────────── */
 #lightbulb-btn {
   position: fixed;
-  bottom: 28px; right: 120px;
+  bottom: 28px; right: 112px;
   z-index: 9999;
   display: flex; align-items: center; gap: 7px;
   background: var(--surface-hi);
@@ -788,9 +788,15 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   border-color: var(--accent);
   color: var(--accent);
 }
-body.log-open #lightbulb-btn { bottom: calc(var(--log-h) + 28px); }
-body.scan-active #lightbulb-btn { bottom: calc(44px + 28px); }
+body.log-open #lightbulb-btn          { bottom: calc(var(--log-h) + 28px); }
+body.scan-active #lightbulb-btn        { bottom: calc(44px + 28px); }
 body.log-open.scan-active #lightbulb-btn { bottom: calc(var(--log-h) + 44px + 28px); }
+body.log-open #owl-btn                 { bottom: calc(var(--log-h) + 28px); }
+body.scan-active #owl-btn              { bottom: calc(44px + 28px); }
+body.log-open.scan-active #owl-btn     { bottom: calc(var(--log-h) + 44px + 28px); }
+body.log-open #owl-hover-panel         { bottom: calc(var(--log-h) + 74px); }
+body.scan-active #owl-hover-panel      { bottom: calc(44px + 74px); }
+body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 74px); }
 
 /* ── Welcome modal ───────────────────────────────────────────────────────── */
 #welcome-backdrop {
@@ -917,8 +923,6 @@ body.log-open.scan-active #lightbulb-btn { bottom: calc(var(--log-h) + 44px + 28
 }
 .welcome-got-it:hover { opacity: .88; }
 .welcome-got-it:disabled { opacity: .4; cursor: not-allowed; }
-body.log-open #owl-btn       { bottom: calc(var(--log-h) + 28px); }
-body.log-open #owl-hover-panel { bottom: calc(var(--log-h) + 74px); }
 
 /* hover panel */
 #owl-hover-panel {
@@ -1897,6 +1901,7 @@ body.log-open #owl-hover-panel { bottom: calc(var(--log-h) + 74px); }
 </div>
 
 <!-- ══ Lightbulb / Welcome ══════════════════════════════════════════════════ -->
+<!-- ══ Floating action buttons ══════════════════════════════════════════════ -->
 <div id="lightbulb-btn" onclick="openWelcome()" title="About SuperBox">
   <span style="font-size:1.1rem;line-height:1">💡</span>
   <span>About</span>
