@@ -55,6 +55,9 @@ _DURATION_TOLERANCE_SEC: float = 3.0  # ±3 seconds
 
 # ─── Scan index pre-filter ────────────────────────────────────────────────────
 
+_STREAMING_PREFIXES = ("soundcloud:", "tidal:", "beatport-streaming:")
+
+
 def _load_scan_index() -> dict[str, dict]:
     """Load scan_index.json written by audio_processor. Returns {} if absent."""
     index_path = Path.home() / "rekordbox-toolkit" / "scan_index.json"
@@ -67,6 +70,102 @@ def _load_scan_index() -> dict[str, dict]:
     except Exception as exc:
         log.warning("Could not load scan index: %s", exc)
         return {}
+
+
+def _load_db_index() -> dict[str, dict]:
+    """
+    Load BPM, key, and duration for every imported track directly from the
+    Rekordbox database (read-only — safe while Rekordbox is open).
+
+    The DB is the authoritative source: it covers all 27k+ imported tracks,
+    not just files that have been through audio_processor since the last run.
+
+    BPM is stored in DjmdContent as int×100 (e.g. 128 BPM → 12800).
+    KeyID is a FK to DjmdKey.ScaleName (e.g. "Am", "C#m").
+    TotalTime is stored in milliseconds.
+
+    Returns {} on any failure — pre-filter gracefully falls back to scan_index.
+    """
+    try:
+        from db_connection import read_db   # noqa: PLC0415
+        from config import DJMT_DB          # noqa: PLC0415
+
+        with read_db(DJMT_DB) as db:
+            # Build KeyID → ScaleName lookup
+            key_map: dict[str, str] = {
+                str(k.ID): k.ScaleName
+                for k in db.get_key().all()
+            }
+
+            index: dict[str, dict] = {}
+            for track in db.get_content().all():
+                path_str = track.FolderPath
+                if not path_str:
+                    continue
+                if any(path_str.startswith(p) for p in _STREAMING_PREFIXES):
+                    continue
+
+                # BPM: stored as int×100 — divide to get real BPM
+                bpm: str | None = None
+                try:
+                    if track.BPM and int(track.BPM) > 0:
+                        bpm = str(round(int(track.BPM) / 100, 2))
+                except (TypeError, ValueError):
+                    pass
+
+                # Key: resolve via KeyID → DjmdKey.ScaleName
+                key: str | None = None
+                try:
+                    if track.KeyID:
+                        key = key_map.get(str(track.KeyID))
+                except (TypeError, AttributeError):
+                    pass
+
+                # Duration: TotalTime is in milliseconds in Rekordbox 6
+                duration_sec: float | None = None
+                try:
+                    tt = track.TotalTime
+                    if tt and int(tt) > 0:
+                        duration_sec = round(int(tt) / 1000, 1)
+                except (TypeError, ValueError, AttributeError):
+                    pass
+
+                index[path_str] = {
+                    "path":         path_str,
+                    "bpm":          bpm,
+                    "key":          key,
+                    "duration_sec": duration_sec,
+                }
+
+        log.info("DB index loaded: %d imported tracks", len(index))
+        return index
+
+    except Exception as exc:
+        log.warning("Could not load DB index (will use scan_index only): %s", exc)
+        return {}
+
+
+def _merge_indices(db_index: dict[str, dict], scan_index: dict[str, dict]) -> dict[str, dict]:
+    """
+    Merge DB index and scan index into a single pre-filter index.
+
+    Strategy:
+      - DB wins for bpm and key (authoritative — what Rekordbox has stored).
+      - scan_index fills in duration_sec where DB has none (audio_processor
+        measures actual audio duration; DB TotalTime may be 0 for some tracks).
+      - Files only in scan_index (not yet imported) are included as-is.
+    """
+    merged: dict[str, dict] = {}
+    for path in set(db_index) | set(scan_index):
+        db  = db_index.get(path, {})
+        si  = scan_index.get(path, {})
+        merged[path] = {
+            "path":         path,
+            "bpm":          db.get("bpm")          or si.get("bpm"),
+            "key":          db.get("key")          or si.get("key"),
+            "duration_sec": db.get("duration_sec") or si.get("duration_sec"),
+        }
+    return merged
 
 
 def _bpm_bucket(bpm_str: str | None) -> str | None:
@@ -288,22 +387,28 @@ def scan_duplicates(
     all_files = _walk_audio_files(root)
     log.info("Found %d audio files total", len(all_files))
 
-    # Apply pre-filter from scan index if available
-    index = _load_scan_index()
+    # Build pre-filter index — DB covers all imported tracks; scan_index fills
+    # in files not yet imported and provides measured audio durations.
+    db_index   = _load_db_index()
+    scan_index = _load_scan_index()
+    index      = _merge_indices(db_index, scan_index)
+
     if index:
         files = _candidate_pairs(all_files, index)
         print(
             f"SUPERBOX_PREFILTER: "
             + json.dumps({
-                "total": len(all_files),
+                "total":      len(all_files),
                 "candidates": len(files),
-                "skipped": len(all_files) - len(files),
+                "skipped":    len(all_files) - len(files),
+                "db_tracks":  len(db_index),
+                "scan_tracks": len(scan_index),
             }),
             flush=True,
         )
     else:
         files = all_files
-        log.info("No scan index found — fingerprinting all files (run Tag Tracks first to speed this up)")
+        log.info("No index available — fingerprinting all files (run Audit + Tag Tracks first to speed this up)")
 
     total = len(files)
     log.info(

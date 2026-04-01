@@ -2612,9 +2612,10 @@ function runCommand(url, logTitle, onDone, useBar = true, showPrefilter = false,
           try {
             const pf = JSON.parse(line.slice(20));
             if (pf.skipped > 0) {
+              appendLog(`Pre-filter: ${pf.db_tracks?.toLocaleString() ?? '?'} tracks from DB + ${pf.scan_tracks?.toLocaleString() ?? '?'} from scan index`, 'dim');
               appendLog(`Pre-filter: ${pf.candidates.toLocaleString()} of ${pf.total.toLocaleString()} files queued for fingerprinting — ${pf.skipped.toLocaleString()} skipped (key + BPM + duration mismatch)`, 'success');
             } else {
-              appendLog(`Pre-filter: no scan index found — fingerprinting all ${pf.total.toLocaleString()} files. Run Tag Tracks first to speed this up.`, 'warn');
+              appendLog(`Pre-filter: no index found — fingerprinting all ${pf.total.toLocaleString()} files. Run Audit + Tag Tracks first to speed this up.`, 'warn');
             }
           } catch(_) {}
         }
