@@ -775,8 +775,8 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 }
 
 .settings-radio {
-  display: flex; 
-  align-items: stretch; 
+  display: flex;
+  align-items: flex-start;
   gap: 10px;
   background: var(--surface-hi); 
   border: 1px solid var(--border);
@@ -792,10 +792,12 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   border-color: var(--accent); 
 }
 
-.settings-radio input[type="radio"] { 
-  margin-top: 2px; 
-  accent-color: var(--accent); 
-  flex-shrink: 0; 
+.settings-radio input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .settings-radio > div { 
