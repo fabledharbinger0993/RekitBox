@@ -61,7 +61,7 @@ _DURATION_TOLERANCE_SEC: float = 3.0  # ±3 seconds
 # Changing either constant invalidates existing cache entries (they store
 # fp_offset and fp_length so mismatches are detected automatically).
 _FP_OFFSET_SEC: int = 45   # seconds to skip at the start
-_FP_LENGTH_SEC: int = 5    # seconds to analyse after the offset
+_FP_LENGTH_SEC: int = 45   # seconds to analyse after the offset
 
 # Build an extended environment for subprocess calls so fpcalc is found
 # even when the server process has a minimal PATH (e.g. launched via Automator).
