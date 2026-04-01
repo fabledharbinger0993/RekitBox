@@ -182,11 +182,12 @@ def cmd_duplicates(args: argparse.Namespace) -> None:
         else Path.home() / "rekordbox-toolkit" / "duplicate_report.csv"
     )
 
-    log.info("Scanning for duplicates under: %s", root)
+    workers = max(1, args.workers)
+    log.info("Scanning for duplicates under: %s (workers=%d)", root, workers)
     log.info("This may take a while for large libraries — progress logged every %d files", 100)
 
     try:
-        groups = scan_duplicates(root)
+        groups = scan_duplicates(root, max_workers=workers)
     except Exception:
         log.exception("Duplicate scan failed")
         sys.exit(1)
@@ -406,6 +407,13 @@ Examples:
         "--output", "-o",
         metavar="FILE",
         help="CSV output path (default: ~/rekordbox-toolkit/duplicate_report.csv)",
+    )
+    p_dupes.add_argument(
+        "--workers", "-w",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Number of parallel fpcalc workers (default: 1)",
     )
     p_dupes.set_defaults(func=cmd_duplicates)
 
