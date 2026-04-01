@@ -672,8 +672,8 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   color: var(--accent);
 }
 .owl-icon { font-size: 1.1rem; line-height: 1; }
-/* shift up when log panel is open */
-/* ── Settings button ────────────────────────────────────────────────────── */
+
+/* ── Settings modal ─────────────────────────────────────────────────────── */
 /* ── Settings modal ─────────────────────────────────────────────────────── */
 #settings-backdrop {
   position: fixed; 
@@ -715,10 +715,12 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   letter-spacing: .04em; 
   margin-right: 6px;
 }
+
 #settings-btn:hover { 
   border-color: var(--accent); 
   color: var(--accent); 
 }
+
 /* Header */
 .settings-header {
   padding: 22px 28px 18px;
@@ -726,13 +728,15 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   display: flex; 
   align-items: center; 
   justify-content: space-between;
-  flex-shrink: 0;           /* important */
+  flex-shrink: 0;
 }
+
 .settings-header h2 { 
   font-size: 1.05rem; 
   font-weight: 700; 
   margin: 0; 
 }
+
 .settings-close {
   background: none; 
   border: none; 
@@ -742,9 +746,11 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   padding: 2px 4px; 
   line-height: 1;
 }
+
 .settings-close:hover { 
   color: var(--text); 
 }
+
 /* Body */
 .settings-body { 
   padding: 24px 28px; 
@@ -755,7 +761,12 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   flex: 1; 
   min-width: 0;
 }
+
 /* Sections */
+.settings-section {
+  min-width: 0;
+}
+
 .settings-section h3 {
   font-size: .75rem; 
   font-weight: 700; 
@@ -764,9 +775,7 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   color: var(--accent); 
   margin: 0 0 12px;
 }
-.settings-section {
-  min-width: 0;
-}
+
 /* Radio group */
 .settings-radio-group { 
   display: flex; 
@@ -774,6 +783,7 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   gap: 8px; 
   min-width: 0; 
 }
+
 .settings-radio {
   display: flex; 
   align-items: stretch; 
@@ -787,23 +797,28 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   width: 100%; 
   box-sizing: border-box;
 }
+
 .settings-radio:has(input:checked) { 
   border-color: var(--accent); 
 }
+
 .settings-radio input[type="radio"] { 
   margin-top: 2px; 
   accent-color: var(--accent); 
   flex-shrink: 0; 
 }
+
 .settings-radio > div { 
   flex: 1; 
   min-width: 0; 
 }
+
 .settings-radio-label { 
   font-size: .83rem; 
   font-weight: 600; 
   color: var(--text); 
 }
+
 .settings-radio-desc { 
   font-size: .78rem; 
   color: var(--text-muted); 
@@ -812,11 +827,13 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   word-break: break-word;
   overflow-wrap: anywhere; 
 }
+
 /* Custom path */
 #settings-custom-path {
   display: none; 
   margin-top: 8px;
 }
+
 #settings-custom-path input {
   width: 100%; 
   box-sizing: border-box;
@@ -827,10 +844,12 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   color: var(--text); 
   font-size: .83rem;
 }
+
 #settings-custom-path input:focus { 
   outline: none; 
   border-color: var(--accent); 
 }
+
 /* Warnings */
 .settings-warnings {
   display: none;
@@ -840,6 +859,7 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   padding: 14px 16px;
   margin-top: 4px;
 }
+
 .settings-warnings h4 {
   font-size: .75rem; 
   font-weight: 700; 
@@ -848,6 +868,7 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   text-transform: uppercase; 
   margin: 0 0 10px;
 }
+
 .settings-warn-item {
   font-size: .79rem; 
   color: var(--text-muted);
@@ -856,23 +877,27 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   padding-left: 16px; 
   position: relative;
 }
+
 .settings-warn-item:last-child { 
   margin-bottom: 0; 
 }
+
 .settings-warn-item::before { 
   content: '⚠'; 
   position: absolute; 
   left: 0; 
   color: var(--caution); 
 }
+
 /* Footer */
 .settings-footer {
   padding: 0 28px 24px;
   display: flex; 
   justify-content: flex-end; 
   gap: 10px;
-  flex-shrink: 0;           /* important */
+  flex-shrink: 0;
 }
+
 .settings-save {
   background: var(--accent); 
   border: none; 
@@ -883,9 +908,11 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   font-weight: 600; 
   cursor: pointer;
 }
+
 .settings-save:hover { 
   opacity: .88; 
 }
+
 .settings-cancel {
   background: none; 
   border: 1px solid var(--border-hi); 
@@ -895,10 +922,10 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   font-size: .83rem; 
   cursor: pointer;
 }
+
 .settings-cancel:hover { 
   opacity: .88; 
 }
-
 /* ── Lightbulb / Welcome button ─────────────────────────────────────────── */
 #lightbulb-btn {
   position: fixed;
