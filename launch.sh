@@ -21,6 +21,10 @@ fi
 
 source "$VENV/bin/activate"
 
+# Pull latest from GitHub before launching
+cd "$SCRIPT_DIR"
+git pull origin main --ff-only >> "$SCRIPT_DIR/../superbox.log" 2>&1
+
 # If the server is already running, just open the browser and exit cleanly
 if curl -s --max-time 1 http://localhost:5001 > /dev/null 2>&1; then
   open http://localhost:5001
