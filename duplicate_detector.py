@@ -329,6 +329,71 @@ def fingerprint_file(path: Path) -> str | None:
         return None
 
 
+# ─── Fingerprint cache ───────────────────────────────────────────────────────
+
+_FP_CACHE_PATH = Path.home() / "rekordbox-toolkit" / "fingerprint_cache.json"
+
+
+def _load_fp_cache() -> dict[str, dict]:
+    """
+    Load the persistent fingerprint cache from disk.
+    Returns a dict keyed by absolute file path string.
+    Each entry: {"path", "fingerprint", "mtime", "size"}.
+    Returns {} if the file is absent or unreadable.
+    """
+    if not _FP_CACHE_PATH.exists():
+        return {}
+    try:
+        with open(_FP_CACHE_PATH, encoding="utf-8") as f:
+            entries = json.load(f)
+        return {
+            e["path"]: e
+            for e in entries
+            if "path" in e and "fingerprint" in e
+        }
+    except Exception as exc:
+        log.warning("Could not load fingerprint cache: %s", exc)
+        return {}
+
+
+def _save_fp_cache(cache: dict[str, dict]) -> None:
+    """Write the fingerprint cache to disk, merging with any existing entries."""
+    _FP_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # Load what's on disk first so we don't overwrite entries from a
+        # concurrent or previous run that aren't in the current cache dict.
+        existing: dict[str, dict] = {}
+        if _FP_CACHE_PATH.exists():
+            try:
+                with open(_FP_CACHE_PATH, encoding="utf-8") as f:
+                    for e in json.load(f):
+                        if "path" in e:
+                            existing[e["path"]] = e
+            except Exception:
+                pass
+        existing.update(cache)  # new entries win
+        with open(_FP_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(list(existing.values()), f)
+        log.info(
+            "Fingerprint cache saved: %d total entries (%d new this run)",
+            len(existing), len(cache),
+        )
+    except Exception as exc:
+        log.warning("Could not save fingerprint cache: %s", exc)
+
+
+def _fp_cache_valid(entry: dict, path: Path) -> bool:
+    """Return True if the cache entry is still valid for this path."""
+    try:
+        stat = path.stat()
+        return (
+            stat.st_mtime == entry.get("mtime")
+            and stat.st_size == entry.get("size")
+        )
+    except OSError:
+        return False
+
+
 # ─── Filesystem walk ──────────────────────────────────────────────────────────
 
 def _walk_audio_files(root: Path) -> list[Path]:
@@ -387,6 +452,10 @@ def scan_duplicates(
     all_files = _walk_audio_files(root)
     log.info("Found %d audio files total", len(all_files))
 
+    # Load fingerprint cache early so we can report hits at prefilter time
+    fp_cache = _load_fp_cache()
+    log.info("Fingerprint cache: %d entries loaded", len(fp_cache))
+
     # Build pre-filter index — DB covers all imported tracks; scan_index fills
     # in files not yet imported and provides measured audio durations.
     db_index   = _load_db_index()
@@ -395,34 +464,61 @@ def scan_duplicates(
 
     if index:
         files = _candidate_pairs(all_files, index)
-        print(
-            f"SUPERBOX_PREFILTER: "
-            + json.dumps({
-                "total":      len(all_files),
-                "candidates": len(files),
-                "skipped":    len(all_files) - len(files),
-                "db_tracks":  len(db_index),
-                "scan_tracks": len(scan_index),
-            }),
-            flush=True,
-        )
     else:
         files = all_files
         log.info("No index available — fingerprinting all files (run Audit + Tag Tracks first to speed this up)")
 
     total = len(files)
+
+    # Count how many candidates already have a valid cached fingerprint
+    cache_hits_pre = sum(1 for p in files if _fp_cache_valid(fp_cache.get(str(p), {}), p))
+    cache_misses   = total - cache_hits_pre
+
+    print(
+        "SUPERBOX_PREFILTER: "
+        + json.dumps({
+            "total":        len(all_files),
+            "candidates":   total,
+            "skipped":      len(all_files) - total,
+            "db_tracks":    len(db_index),
+            "scan_tracks":  len(scan_index),
+            "cached":       cache_hits_pre,
+            "to_compute":   cache_misses,
+        }),
+        flush=True,
+    )
+
     log.info(
         "Beginning fingerprint pass on %d files "
-        "(workers=%d pause=%.1fs)",
-        total, max_workers, pause_seconds,
+        "(workers=%d pause=%.1fs cached=%d to_compute=%d)",
+        total, max_workers, pause_seconds, cache_hits_pre, cache_misses,
     )
 
     fp_map: dict[str, list[Path]] = {}
-    failed = 0
+    failed    = 0
     completed = 0
+    hits      = 0
+    # Collect new cache entries — list.append is GIL-safe for concurrent use
+    new_cache_entries: list[dict] = []
 
-    def _fingerprint_one(path: Path) -> tuple[Path, str | None]:
-        return path, fingerprint_file(path)
+    def _fingerprint_one(path: Path) -> tuple[Path, str | None, bool]:
+        """Return (path, fingerprint, was_cache_hit). Never raises."""
+        entry = fp_cache.get(str(path))
+        if entry and _fp_cache_valid(entry, path):
+            return path, entry["fingerprint"], True
+        fp = fingerprint_file(path)
+        if fp is not None:
+            try:
+                stat = path.stat()
+                new_cache_entries.append({
+                    "path":        str(path),
+                    "fingerprint": fp,
+                    "mtime":       stat.st_mtime,
+                    "size":        stat.st_size,
+                })
+            except OSError:
+                pass
+        return path, fp, False
 
     if max_workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -430,7 +526,7 @@ def scan_duplicates(
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
                 try:
-                    path, fp = future.result()
+                    path, fp, was_hit = future.result()
                 except Exception as exc:
                     log.error("Unexpected fingerprint error: %s", exc)
                     failed += 1
@@ -439,29 +535,38 @@ def scan_duplicates(
                     failed += 1
                 else:
                     fp_map.setdefault(fp, []).append(path)
+                    if was_hit:
+                        hits += 1
                 if completed % _LOG_EVERY == 0:
                     log.info(
-                        "Fingerprinting: %d / %d  (failures: %d)",
-                        completed, total, failed,
+                        "Fingerprinting: %d / %d  (cache hits: %d  failures: %d)",
+                        completed, total, hits, failed,
                     )
     else:
         for i, path in enumerate(files):
             if i > 0 and i % _LOG_EVERY == 0:
                 log.info(
-                    "Fingerprinting: %d / %d  (failures so far: %d)",
-                    i, total, failed,
+                    "Fingerprinting: %d / %d  (cache hits: %d  failures so far: %d)",
+                    i, total, hits, failed,
                 )
-            fp = fingerprint_file(path)
+            path, fp, was_hit = _fingerprint_one(path)
             if fp is None:
                 failed += 1
             else:
                 fp_map.setdefault(fp, []).append(path)
+                if was_hit:
+                    hits += 1
             if pause_seconds > 0 and i < total - 1:
                 time.sleep(pause_seconds)
 
+    # Persist new fingerprints to cache
+    new_entries_map = {e["path"]: e for e in new_cache_entries}
+    if new_entries_map:
+        _save_fp_cache(new_entries_map)
+
     log.info(
-        "Fingerprint pass complete — %d unique prints, %d failures",
-        len(fp_map), failed,
+        "Fingerprint pass complete — %d cache hits, %d computed, %d failures, %d unique prints",
+        hits, len(new_entries_map), failed, len(fp_map),
     )
 
     groups: list[DuplicateGroup] = []
