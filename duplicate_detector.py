@@ -35,11 +35,11 @@ import csv
 import json
 import logging
 import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import acoustid
 from mutagen import File as MutagenFile
 
 from config import AUDIO_EXTENSIONS, MUSIC_ROOT, SKIP_DIRS, SKIP_PREFIXES
@@ -51,6 +51,15 @@ _LOG_EVERY: int = 100
 # Pre-filter tolerances
 _BPM_TOLERANCE_PCT: float = 0.03   # ±3% — accounts for detection variance
 _DURATION_TOLERANCE_SEC: float = 3.0  # ±3 seconds
+
+# Fingerprint analysis window.
+# DJ tracks often have 16–32 bar intros before harmonic content arrives.
+# Skipping 30 s lands us in the body of most house/techno/dance tracks,
+# giving Chromaprint the melodic material it needs for reliable matching.
+# Changing either constant invalidates existing cache entries (they store
+# fp_offset and fp_length so mismatches are detected automatically).
+_FP_OFFSET_SEC: int = 30   # seconds to skip at the start
+_FP_LENGTH_SEC: int = 60   # seconds to analyse after the offset
 
 
 # ─── Scan index pre-filter ────────────────────────────────────────────────────
@@ -301,28 +310,58 @@ class DuplicateGroup:
 
 # ─── Fingerprinting ───────────────────────────────────────────────────────────
 
-def fingerprint_file(path: Path) -> str | None:
+def fingerprint_file(
+    path: Path,
+    offset: int = _FP_OFFSET_SEC,
+    length: int = _FP_LENGTH_SEC,
+) -> str | None:
     """
-    Compute the Chromaprint acoustic fingerprint for an audio file.
-    Uses fpcalc via pyacoustid. Returns the fingerprint as a str, or None
-    on failure.
+    Compute the Chromaprint acoustic fingerprint for an audio file by calling
+    fpcalc directly as a subprocess.
 
-    pyacoustid may return the fingerprint as bytes in some versions — this
-    function always decodes to str so fp_map keys are consistent.
+    Parameters
+    ----------
+    path : Path
+        Audio file to fingerprint.
+    offset : int
+        Seconds to skip at the start of the file before analysis begins.
+        Default _FP_OFFSET_SEC (30 s) — skips DJ intros so the fingerprint
+        captures the harmonic body of the track, not the intro percussion.
+    length : int
+        Seconds of audio to analyse after the offset.
+        Default _FP_LENGTH_SEC (60 s) — enough for reliable Chromaprint matching.
 
-    fpcalc default: analyses first 120 seconds of audio — sufficient for DJ use.
+    Returns
+    -------
+    str or None
+        Fingerprint string, or None on any failure.
     """
     try:
-        duration, fingerprint = acoustid.fingerprint_file(str(path))
-        if not fingerprint:
+        result = subprocess.run(
+            [
+                "fpcalc", "-json",
+                "-offset", str(offset),
+                "-length", str(length),
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        if result.returncode != 0:
+            log.error("fpcalc error for %s: %s", path.name, result.stderr.strip())
+            return None
+        data = json.loads(result.stdout)
+        fp = data.get("fingerprint")
+        if not fp:
             log.warning("Empty fingerprint for %s", path.name)
             return None
-        # Normalise to str — some pyacoustid versions return bytes
-        if isinstance(fingerprint, bytes):
-            fingerprint = fingerprint.decode("utf-8", errors="replace")
-        return fingerprint
-    except acoustid.FingerprintGenerationError as e:
-        log.error("Fingerprint failed for %s: %s", path.name, e)
+        return fp
+    except subprocess.TimeoutExpired:
+        log.error("fpcalc timed out for %s", path.name)
+        return None
+    except FileNotFoundError:
+        log.error("fpcalc not found — install with: brew install chromaprint")
         return None
     except Exception as e:
         log.error("Unexpected error fingerprinting %s: %s", path.name, e)
@@ -383,7 +422,17 @@ def _save_fp_cache(cache: dict[str, dict]) -> None:
 
 
 def _fp_cache_valid(entry: dict, path: Path) -> bool:
-    """Return True if the cache entry is still valid for this path."""
+    """
+    Return True if the cache entry is still valid for this path.
+    Checks file mtime + size (file unchanged) and fp_offset + fp_length
+    (analysis window unchanged). Any mismatch forces a fresh fpcalc run.
+    """
+    if not entry:
+        return False
+    if entry.get("fp_offset") != _FP_OFFSET_SEC:
+        return False
+    if entry.get("fp_length") != _FP_LENGTH_SEC:
+        return False
     try:
         stat = path.stat()
         return (
@@ -515,6 +564,8 @@ def scan_duplicates(
                     "fingerprint": fp,
                     "mtime":       stat.st_mtime,
                     "size":        stat.st_size,
+                    "fp_offset":   _FP_OFFSET_SEC,
+                    "fp_length":   _FP_LENGTH_SEC,
                 })
             except OSError:
                 pass
