@@ -1312,17 +1312,14 @@ body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 
   <button class="step-tab" data-target="step-process">
     <span class="step-num">2</span> Tag Tracks
   </button>
-  <button class="step-tab" data-target="step-import-dry">
-    <span class="step-num">3</span> Preview Import
-  </button>
   <button class="step-tab" data-target="step-import">
-    <span class="step-num">4</span> Import
+    <span class="step-num">3</span> Import
   </button>
   <button class="step-tab" data-target="step-link">
-    <span class="step-num">5</span> Link Playlists
+    <span class="step-num">4</span> Link Playlists
   </button>
   <button class="step-tab" data-target="step-normalize">
-    <span class="step-num">6</span> Normalize
+    <span class="step-num">5</span> Normalize
   </button>
   <button class="step-tab" data-target="step-duplicates">
     <span class="step-num">⊕</span> Duplicates
@@ -1467,55 +1464,30 @@ body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 
     </div>
   </div>
 
-  <!-- ── Step 3: Import dry-run ──────────────────────────────────────────── -->
-  <div class="card" id="step-import-dry">
-    <div class="card-head">
-      <div class="card-icon safe"><img src="/static/icon-preview.png" alt="Preview Import"></div>
-      <div class="card-meta">
-        <div class="card-title">Step 3 — Preview What Will Be Imported</div>
-        <div class="card-blurb">See the exact list of tracks that would be added to the database — without actually adding them. Always do this before the real import.</div>
-      </div>
-      <span class="risk-badge safe">Read-Only</span>
-    </div>
-
-    <div class="explainers">
-      <details>
-        <summary>What does the preview show?</summary>
-        <div class="explain-body">
-          <p>It walks your music folder and checks each file against what's already in the database. You'll see:</p>
-          <ul>
-            <li>How many tracks are new (will be imported)</li>
-            <li>How many are already in the DB (will be skipped)</li>
-            <li>Any files it can't read or extract metadata from</li>
-          </ul>
-          <p>Nothing is written. This is the sanity check before Step 4.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="card-form">
-      <div class="field">
-        <label>Music Folder Path</label>
-        <input type="text" id="import-dry-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-neon" onclick="runImportDry()">Preview Import</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Step 4: Import ─────────────────────────────────────────────────── -->
+  <!-- ── Step 3: Import (with built-in preview) ────────────────────────── -->
   <div class="card" id="step-import">
     <div class="card-head">
       <div class="card-icon warn"><img src="/static/icon-import.png" alt="Import"></div>
       <div class="card-meta">
-        <div class="card-title">Step 4 — Import Tracks into RekordBox</div>
-        <div class="card-blurb">Writes the new tracks into RekordBox's database. <strong>RekordBox must be closed.</strong> A timestamped backup is created automatically before anything is written.</div>
+        <div class="card-title">Step 3 — Import Tracks into RekordBox</div>
+        <div class="card-blurb">Preview first to see exactly what will be added — then import. <strong>RekordBox must be closed for the real import.</strong> A timestamped backup is created automatically before anything is written.</div>
       </div>
       <span class="risk-badge warn">Writes DB</span>
     </div>
 
     <div class="explainers">
+      <details>
+        <summary>What does Preview show?</summary>
+        <div class="explain-body">
+          <p>Preview walks your music folder and checks each file against what's already in the database — no writes, no changes. You'll see:</p>
+          <ul>
+            <li>How many tracks are new (will be imported)</li>
+            <li>How many are already in the DB (will be skipped)</li>
+            <li>Any files it can't read or extract metadata from</li>
+          </ul>
+          <p>Always run Preview first. If the numbers look right, hit Import.</p>
+        </div>
+      </details>
       <details>
         <summary>What exactly gets written to the database?</summary>
         <div class="explain-body">
@@ -1546,6 +1518,7 @@ body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 
         <input type="text" id="import-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
       </div>
       <div class="btn-row">
+        <button class="btn btn-ghost" onclick="runImportDry()">Preview Import</button>
         <button class="btn btn-neon" id="btn-import" onclick="runImport()">Import Tracks</button>
       </div>
       <div class="rb-block-msg" id="import-rb-block">
@@ -1559,7 +1532,7 @@ body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 
     <div class="card-head">
       <div class="card-icon warn"><img src="/static/icon-link.png" alt="Link Playlists"></div>
       <div class="card-meta">
-        <div class="card-title">Step 5 — Link Tracks to Their Playlists</div>
+        <div class="card-title">Step 4 — Link Tracks to Their Playlists</div>
         <div class="card-blurb">Matches imported tracks to RekordBox playlists based on the folder they live in. If your playlists were built from your folder structure, this connects them automatically.</div>
       </div>
       <span class="risk-badge warn">Writes DB</span>
@@ -2442,7 +2415,7 @@ function lsLoad(id) {
 async function prefillDefaults() {
   // Fields that map to the music root
   const rootFields = [
-    'process-path','import-dry-path','import-path',
+    'process-path','import-path',
     'link-path','normalize-path','dupes-path','relocate-new','convert-path',
   ];
   // Fields that are optional overrides (audit root) — prefill but don't force
@@ -2788,10 +2761,10 @@ function runNormalize() {
 }
 
 function runImportDry() {
-  const path = document.getElementById('import-dry-path').value.trim();
+  const path = document.getElementById('import-path').value.trim();
   if (!path) { alert('Enter a music folder path first.'); return; }
   const p = new URLSearchParams({ path, dry_run: '1' });
-  runCommand(`/api/run/import?${p}`, 'Preview Import — Dry Run', null, true);
+  runCommand(`/api/run/import?${p}`, 'Preview Import — Dry Run', null, true, false, null);
 }
 
 function runImport() {

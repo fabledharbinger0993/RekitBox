@@ -116,7 +116,12 @@ def cmd_import(args: argparse.Namespace) -> None:
         try:
             with read_db(DJMT_DB) as db:
                 report = import_directory(root, db, dry_run=True)
-            print(report.summary())
+            summary_text = report.summary()
+            print(summary_text)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = _write_report("Import", f"preview_import_{timestamp}.txt", summary_text)
+            if report_path:
+                print(f"SUPERBOX_REPORT_PATH: {report_path}", flush=True)
         except Exception:
             log.exception("Dry-run import failed")
             sys.exit(1)
@@ -125,9 +130,14 @@ def cmd_import(args: argparse.Namespace) -> None:
         try:
             with write_db(DJMT_DB) as db:
                 report = import_directory(root, db, dry_run=False)
-            print(report.summary())
+            summary_text = report.summary()
+            print(summary_text)
             if report.failed > 0:
                 log.warning("%d tracks failed to import — see log above", report.failed)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = _write_report("Import", f"import_{timestamp}.txt", summary_text)
+            if report_path:
+                print(f"SUPERBOX_REPORT_PATH: {report_path}", flush=True)
         except Exception:
             log.exception("Import failed")
             sys.exit(1)
