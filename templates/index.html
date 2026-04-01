@@ -674,32 +674,21 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 .owl-icon { font-size: 1.1rem; line-height: 1; }
 
 /* ── Settings modal ─────────────────────────────────────────────────────── */
-/* ── Settings modal ─────────────────────────────────────────────────────── */
 #settings-backdrop {
-  position: fixed; 
-  inset: 0; 
-  z-index: 10000;
+  position: fixed; inset: 0; z-index: 10000;
   background: rgba(0,0,0,.72);
-  display: flex; 
-  align-items: center; 
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   padding: 24px;
 }
-
-#settings-backdrop.hidden { 
-  display: none; 
-}
-
+#settings-backdrop.hidden { display: none; }
 #settings-modal {
   background: var(--surface);
   border: 1px solid var(--border-hi);
   border-radius: 12px;
-  width: 100%; 
-  max-width: 560px;
+  width: 100%; max-width: 560px;
   max-height: 90vh;
   box-shadow: 0 24px 80px rgba(0,0,0,.8);
-  display: flex;
-  flex-direction: column;
+  display: flex; flex-direction: column;
   overflow: hidden;
 }
 
@@ -1194,24 +1183,6 @@ body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 
 .gls-card-body ul { margin: 5px 0 5px 15px; }
 .gls-card-body li { margin-bottom: 3px; }
 
-/* ── Archive & Log Settings modal ─────────────────────────────────────── */
-#settings-backdrop {
-  position: fixed; inset: 0; z-index: 8900;
-  background: rgba(0,0,0,.55);
-  display: none;
-}
-#settings-backdrop.open { display: flex; align-items: center; justify-content: center; }
-
-#settings-modal {
-  width: 540px; max-width: calc(100vw - 40px);
-  max-height: 80vh;
-  background: #0d0d20;
-  border: 1px solid var(--border-hi);
-  border-radius: var(--radius);
-  box-shadow: 0 12px 48px rgba(0,0,0,.75);
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
 /* Gear / settings trigger button */
 #settings-btn {
   background: none; border: 1px solid var(--border-hi);
@@ -1977,8 +1948,6 @@ body.log-open.scan-active #owl-hover-panel { bottom: calc(var(--log-h) + 44px + 
 </div>
 
 <!-- ══ Settings modal ═══════════════════════════════════════════════════════ -->
-<!-- Add this whole block where you want the settings modal to appear -->
-<!-- ══ Settings modal ═══════════════════════════════════════════════════════ -->
 <div id="settings-backdrop" class="hidden">
   <div id="settings-modal">
     
@@ -2229,10 +2198,10 @@ function openSettings() {
     document.querySelector('input[name="archive-mode"][value="auto"]').checked = true;
     _settingsUpdateUI('auto');
   });
-  document.getElementById('settings-backdrop').classList.add('open');
+  document.getElementById('settings-backdrop').classList.remove('hidden');
 }
 function closeSettings() {
-  document.getElementById('settings-backdrop').classList.remove('open');
+  document.getElementById('settings-backdrop').classList.add('hidden');
 }
 function _settingsUpdateUI(mode) {
   document.getElementById('settings-custom-path').style.display  = mode === 'custom' ? 'block' : 'none';
