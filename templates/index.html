@@ -698,8 +698,10 @@ body.log-open #scan-bar { bottom: var(--log-h); }
   text-transform: uppercase; color: var(--accent); margin: 0 0 12px;
 }
 .settings-radio-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.settings-radio {
-  display: flex; align-items: flex-start; gap: 10px;
+.log-text-container { overflow: hidden; display: block; width: 100%;      /* Pins it to the width of its parent */
+}
+  .settings-radio {
+  display: flex; align-items: stretch; gap: 10px;
   background: var(--surface-hi); border: 1px solid var(--border);
   border-radius: 7px; padding: 11px 14px; cursor: pointer;
   transition: border-color .15s;
@@ -709,7 +711,8 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 .settings-radio input[type="radio"] { margin-top: 2px; accent-color: var(--accent); flex-shrink:0; }
 .settings-radio > div { flex: 1; min-width: 0; }
 .settings-radio-label { font-size: .83rem; font-weight: 600; color: var(--text); }
-.settings-radio-desc  { font-size: .78rem; color: var(--text-muted); margin-top: 2px; line-height:1.5; }
+.settings-radio-desc  { font-size: .78rem; color: var(--text-muted); margin-top: 2px; line-height:1.5; word-break: break-word; 
+  overflow-wrap: anywhere; }
 #settings-custom-path {
   display: none; margin-top: 8px;
 }
