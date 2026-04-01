@@ -58,8 +58,8 @@ _DURATION_TOLERANCE_SEC: float = 3.0  # ±3 seconds
 # giving Chromaprint the melodic material it needs for reliable matching.
 # Changing either constant invalidates existing cache entries (they store
 # fp_offset and fp_length so mismatches are detected automatically).
-_FP_OFFSET_SEC: int = 30   # seconds to skip at the start
-_FP_LENGTH_SEC: int = 60   # seconds to analyse after the offset
+_FP_OFFSET_SEC: int = 45   # seconds to skip at the start
+_FP_LENGTH_SEC: int = 5    # seconds to analyse after the offset
 
 
 # ─── Scan index pre-filter ────────────────────────────────────────────────────
