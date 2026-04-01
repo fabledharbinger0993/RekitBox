@@ -35,6 +35,7 @@ import csv
 import json
 import logging
 import re
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -60,6 +61,22 @@ _DURATION_TOLERANCE_SEC: float = 3.0  # ±3 seconds
 # fp_offset and fp_length so mismatches are detected automatically).
 _FP_OFFSET_SEC: int = 45   # seconds to skip at the start
 _FP_LENGTH_SEC: int = 5    # seconds to analyse after the offset
+
+# Resolve fpcalc binary once at import time.
+# shutil.which() checks PATH; fallbacks cover common Homebrew locations
+# that may not be in the server process's PATH (Intel: /usr/local, Apple Silicon: /opt/homebrew).
+def _find_fpcalc() -> str:
+    found = shutil.which("fpcalc")
+    if found:
+        return found
+    for candidate in ["/opt/homebrew/bin/fpcalc", "/usr/local/bin/fpcalc"]:
+        if Path(candidate).is_file():
+            return candidate
+    return "fpcalc"   # will produce a clear FileNotFoundError at call time
+
+_FPCALC = _find_fpcalc()
+log_startup = logging.getLogger(__name__)
+log_startup.debug("fpcalc resolved to: %s", _FPCALC)
 
 
 # ─── Scan index pre-filter ────────────────────────────────────────────────────
@@ -339,7 +356,7 @@ def fingerprint_file(
     try:
         result = subprocess.run(
             [
-                "fpcalc", "-json",
+                _FPCALC, "-json",
                 "-offset", str(offset),
                 "-length", str(length),
                 str(path),
@@ -361,7 +378,7 @@ def fingerprint_file(
         log.error("fpcalc timed out for %s", path.name)
         return None
     except FileNotFoundError:
-        log.error("fpcalc not found — install with: brew install chromaprint")
+        log.error("fpcalc not found at %s — install with: brew install chromaprint", _FPCALC)
         return None
     except Exception as e:
         log.error("Unexpected error fingerprinting %s: %s", path.name, e)
