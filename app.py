@@ -134,6 +134,73 @@ def _sse_response(cmd: list[str]) -> Response:
     )
 
 
+def _stream_pipeline(steps: list[dict]):
+    """
+    Generator that runs a list of pipeline steps sequentially.
+    Each step dict has: {"name": str, "cmd": list[str]}
+    Some steps produce a SUPERBOX_REPORT_PATH that the next step may consume
+    (e.g. duplicates → prune). This is captured and injected as needed.
+
+    SSE events emitted beyond the normal {"line": "..."} stream:
+      {"step_start": N, "step_name": "...", "total_steps": N}
+      {"step_end": N, "step_name": "...", "exit_code": N}
+      {"done": true, "exit_code": 0}   — all steps complete
+      {"done": true, "exit_code": N, "failed_step": "..."} — step failed
+    """
+    global _active_proc
+    total = len(steps)
+    last_report_path: str | None = None   # passed from duplicates → prune
+
+    for idx, step in enumerate(steps, 1):
+        name = step["name"]
+        cmd  = list(step["cmd"])
+
+        # Inject the CSV from a previous duplicates step into prune
+        if step.get("needs_csv") and last_report_path:
+            cmd.append(last_report_path)
+
+        yield f"data: {json.dumps({'step_start': idx, 'step_name': name, 'total_steps': total})}\n\n"
+
+        exit_code = 0
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(REPO_ROOT),
+                env=_subprocess_env(),
+            )
+            with _proc_lock:
+                _active_proc = process
+            try:
+                for line in iter(process.stdout.readline, ""):
+                    stripped = line.rstrip()
+                    # Capture CSV path for downstream steps
+                    if stripped.startswith("SUPERBOX_REPORT_PATH: "):
+                        last_report_path = stripped[len("SUPERBOX_REPORT_PATH: "):]
+                    yield f"data: {json.dumps({'line': stripped})}\n\n"
+                process.wait()
+                exit_code = process.returncode
+            finally:
+                with _proc_lock:
+                    _active_proc = None
+        except Exception as exc:
+            with _proc_lock:
+                _active_proc = None
+            yield f"data: {json.dumps({'line': f'[SERVER ERROR] {exc}'})}\n\n"
+            exit_code = 1
+
+        yield f"data: {json.dumps({'step_end': idx, 'step_name': name, 'exit_code': exit_code})}\n\n"
+
+        if exit_code != 0:
+            yield f"data: {json.dumps({'done': True, 'exit_code': exit_code, 'failed_step': name})}\n\n"
+            return
+
+    yield f"data: {json.dumps({'done': True, 'exit_code': 0})}\n\n"
+
+
 def _require_rb_closed():
     """Return an error response if Rekordbox is running, else None."""
     if _rb_is_running():
@@ -171,10 +238,12 @@ def api_config():
     """Expose the configured default paths so the UI can pre-fill forms."""
     try:
         from config import (  # noqa: PLC0415
-            DJMT_DB, MUSIC_ROOT,
+            DJMT_DB, MUSIC_ROOT, SKIP_DIRS,
             ARCHIVE_ROOT, SAVEPOINTS_DIR, QUARANTINE_DIR, REPORTS_DIR,
             ARCHIVE_ENABLED, _archive_mode, _custom_archive,
         )
+        from user_config import load_user_config as _luc  # noqa: PLC0415
+        _ucfg = _luc()
         return jsonify({
             "music_root":       str(MUSIC_ROOT),
             "djmt_db":          str(DJMT_DB),
@@ -185,6 +254,7 @@ def api_config():
             "archive_mode":     _archive_mode,
             "custom_archive":   _custom_archive,
             "archive_enabled":  ARCHIVE_ENABLED,
+            "excluded_dirs":    _ucfg.get("excluded_dirs", []),
             "configured":       True,
         })
     except Exception:
@@ -243,6 +313,125 @@ def api_process():
     return _sse_response(cmd)
 
 
+@app.route("/api/run/pipeline", methods=["POST"])
+def api_pipeline():
+    """
+    Execute a user-defined sequence of steps.
+    Body: {"dry_run": bool, "steps": [{"type": str, "config": {...}}, ...]}
+
+    Supported step types and their config keys:
+      organize   — source, target, mix_threshold, workers
+      process    — path, workers, no_bpm, no_key, force
+      normalize  — path, workers
+      duplicates — path, workers, output
+      prune      — (csv injected automatically from previous duplicates step)
+      convert    — path, format, workers
+      relocate   — old_root, new_root
+    """
+    body     = request.get_json(force=True, silent=True) or {}
+    dry_run  = bool(body.get("dry_run", True))
+    raw_steps = body.get("steps", [])
+
+    if not raw_steps:
+        return jsonify({"error": "steps list is required"}), 400
+
+    built: list[dict] = []
+
+    for s in raw_steps:
+        stype  = s.get("type", "")
+        cfg    = s.get("config", {})
+        name   = s.get("name", stype)
+
+        if stype == "organize":
+            cmd = [sys.executable, str(CLI_PATH), "organize",
+                   cfg.get("source", ""), cfg.get("target", "")]
+            if not dry_run:
+                cmd.append("--no-dry-run")
+            if cfg.get("mix_threshold"):
+                cmd += ["--mix-threshold", str(cfg["mix_threshold"])]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+
+        elif stype == "process":
+            cmd = [sys.executable, str(CLI_PATH), "process", cfg.get("path", "")]
+            if cfg.get("no_bpm"):   cmd.append("--no-bpm")
+            if cfg.get("no_key"):   cmd.append("--no-key")
+            if cfg.get("no_normalize"): cmd.append("--no-normalize")
+            if cfg.get("force"):    cmd.append("--force")
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+            if dry_run:             cmd.append("--dry-run")
+
+        elif stype == "normalize":
+            cmd = [sys.executable, str(CLI_PATH), "process", cfg.get("path", ""),
+                   "--no-bpm", "--no-key"]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+            if dry_run: cmd.append("--dry-run")
+
+        elif stype == "duplicates":
+            cmd = [sys.executable, str(CLI_PATH), "duplicates", cfg.get("path", "")]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+            if cfg.get("output"):
+                cmd += ["--output", cfg["output"]]
+
+        elif stype == "prune":
+            # CSV path injected at runtime from previous duplicates step output
+            cmd = [sys.executable, str(CLI_PATH), "prune"]
+            if dry_run: cmd.append("--dry-run")
+            built.append({"name": name, "cmd": cmd, "needs_csv": True})
+            continue
+
+        elif stype == "convert":
+            cmd = [sys.executable, str(CLI_PATH), "convert",
+                   cfg.get("path", ""), cfg.get("format", "aiff")]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+
+        elif stype == "relocate":
+            cmd = [sys.executable, str(CLI_PATH), "relocate",
+                   cfg.get("old_root", ""), cfg.get("new_root", "")]
+
+        else:
+            return jsonify({"error": f"Unknown step type: {stype}"}), 400
+
+        built.append({"name": name, "cmd": cmd})
+
+    return Response(
+        _stream_pipeline(built),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/run/organize")
+def api_organize():
+    source = request.args.get("source", "").strip()
+    target = request.args.get("target", "").strip()
+    if not source or not target:
+        return jsonify({"error": "source and target are required"}), 400
+
+    cmd = [sys.executable, str(CLI_PATH), "organize", source, target]
+
+    if request.args.get("no_dry_run") == "1":
+        cmd.append("--no-dry-run")
+
+    workers = request.args.get("workers", "1").strip()
+    if workers.isdigit() and int(workers) > 1:
+        cmd += ["--workers", workers]
+
+    threshold = request.args.get("mix_threshold", "").strip()
+    if threshold:
+        try:
+            if float(threshold) > 0:
+                cmd += ["--mix-threshold", threshold]
+        except ValueError:
+            pass
+
+    return _sse_response(cmd)
+
+
 @app.route("/api/run/convert")
 def api_convert():
     path = request.args.get("path", "").strip()
@@ -251,6 +440,9 @@ def api_convert():
         return jsonify({"error": "path and format are required"}), 400
 
     cmd = [sys.executable, str(CLI_PATH), "convert", path, format_target]
+    workers = request.args.get("workers", "1").strip()
+    if workers.isdigit() and int(workers) > 1:
+        cmd += ["--workers", workers]
     return _sse_response(cmd)
 
 
@@ -515,6 +707,8 @@ def api_settings():
             cfg["archive_mode"] = data["archive_mode"]
         if "custom_archive_dir" in data:
             cfg["custom_archive_dir"] = data["custom_archive_dir"]
+        if "excluded_dirs" in data:
+            cfg["excluded_dirs"] = [d for d in data["excluded_dirs"] if isinstance(d, str) and d.strip()]
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             _json.dump(cfg, f, indent=2)
         return jsonify({"ok": True, "note": "Restart SuperBox for changes to take effect."})
