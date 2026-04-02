@@ -31,17 +31,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# scipy.stats must be fully initialized before librosa or pyloudnorm touch it;
-# Python 3.12+ has a circular-import bug inside scipy.stats where a lazy import
-# of pyloudnorm (which imports scipy.stats) fails with
-#   "cannot import name '_continuous_distns' from partially initialized module"
-# if librosa has already partially loaded scipy.  Importing scipy.stats first
-# forces the full initialization and prevents that race.
-try:
-    import scipy.stats as _scipy_stats_preload  # noqa: F401
-except Exception:
-    pass
-
 import librosa
 import numpy as np
 import soundfile as sf
@@ -140,15 +129,33 @@ def _detect_key(path: Path) -> str | None:
 # ─── Loudness measurement ─────────────────────────────────────────────────────
 
 def _measure_lufs(path: Path) -> float | None:
+    """
+    Measure integrated loudness via ffmpeg's loudnorm filter (EBU R128).
+    Uses a subprocess so memory use is bounded regardless of file size, and
+    avoids the scipy circular-import problem on Python 3.12+.
+    """
     try:
-        import pyloudnorm as pyln  # lazy — avoids scipy circular import at module load  # noqa: PLC0415
-        data, rate = sf.read(str(path))
-        meter = pyln.Meter(rate)
-        lufs = meter.integrated_loudness(data)
+        cmd = [
+            "ffmpeg", "-hide_banner",
+            "-i", str(path),
+            "-af", "loudnorm=print_format=json",
+            "-f", "null", "-",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # loudnorm prints its JSON summary to stderr after the last '{'
+        idx = result.stderr.rfind("{")
+        if idx == -1:
+            log.warning("No loudnorm JSON in ffmpeg output for %s", path.name)
+            return None
+        end = result.stderr.find("}", idx)
+        if end == -1:
+            return None
+        data = json.loads(result.stderr[idx : end + 1])
+        lufs = float(data["input_i"])
         if not np.isfinite(lufs):
             log.warning("Non-finite LUFS for %s (silent file?)", path.name)
             return None
-        return round(float(lufs), 2)
+        return round(lufs, 2)
     except Exception as e:
         log.error("Loudness measurement failed for %s: %s", path.name, e)
         return None
@@ -205,11 +212,15 @@ def _normalise_file(path: Path, gain_db: float) -> bool:
             log.error("ffmpeg failed for %s:\n%s", path.name, result.stderr[-500:])
             return False
 
-        # sf.read raises SoundFileError on failure — it never returns None.
-        # Check for an empty or implausibly short result instead.
-        verify_data, verify_rate = sf.read(str(tmp_path))
-        if len(verify_data) == 0:
-            log.error("ffmpeg output is empty (zero samples) for %s", path.name)
+        # Verify the output without loading audio into RAM — sf.info() reads
+        # only the file header, so large files don't cause a memory spike.
+        try:
+            verify_info = sf.info(str(tmp_path))
+        except Exception as verify_err:
+            log.error("Could not verify ffmpeg output for %s: %s", path.name, verify_err)
+            return False
+        if verify_info.frames == 0:
+            log.error("ffmpeg output is empty (zero frames) for %s", path.name)
             return False
 
         shutil.move(str(path), str(bak))
@@ -298,10 +309,13 @@ def _convert_file(path: Path, target_format: str) -> tuple[bool, str]:
         if result.returncode != 0:
             return False, f"ffmpeg failed: {result.stderr[-200:]}"
 
-        # Verify output
-        verify_data, _ = sf.read(str(tmp_path))
-        if len(verify_data) == 0:
-            return False, "ffmpeg output is empty (zero samples)"
+        # Verify output without loading into RAM
+        try:
+            verify_info = sf.info(str(tmp_path))
+        except Exception as verify_err:
+            return False, f"Could not verify ffmpeg output: {verify_err}"
+        if verify_info.frames == 0:
+            return False, "ffmpeg output is empty (zero frames)"
 
         # Move original to .bak, new to path
         shutil.move(str(path), str(bak))
