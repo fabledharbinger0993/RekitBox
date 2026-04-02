@@ -31,6 +31,17 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# scipy.stats must be fully initialized before librosa or pyloudnorm touch it;
+# Python 3.12+ has a circular-import bug inside scipy.stats where a lazy import
+# of pyloudnorm (which imports scipy.stats) fails with
+#   "cannot import name '_continuous_distns' from partially initialized module"
+# if librosa has already partially loaded scipy.  Importing scipy.stats first
+# forces the full initialization and prevents that race.
+try:
+    import scipy.stats as _scipy_stats_preload  # noqa: F401
+except Exception:
+    pass
+
 import librosa
 import numpy as np
 import soundfile as sf
