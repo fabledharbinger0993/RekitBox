@@ -41,6 +41,19 @@ from config import AUDIO_EXTENSIONS, BPM_MAX, BPM_MIN, LUFS_TOLERANCE, TARGET_LU
 
 log = logging.getLogger(__name__)
 
+# Resolve ffmpeg once at import time — on macOS with Homebrew the server process
+# may not inherit the shell PATH, so we fall back to common install locations.
+def _find_ffmpeg() -> str:
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    for candidate in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+        if Path(candidate).exists():
+            return candidate
+    return "ffmpeg"  # last resort — will surface a clear FileNotFoundError if absent
+
+_FFMPEG = _find_ffmpeg()
+
 ANALYSIS_DURATION: float = 90.0
 LIBROSA_TO_CAMELOT: dict[str, str] = {
     "Amin": "8A", "Emin": "9A", "Bmin": "10A", "F#min": "11A", "C#min": "12A",
@@ -136,7 +149,7 @@ def _measure_lufs(path: Path) -> float | None:
     """
     try:
         cmd = [
-            "ffmpeg", "-hide_banner",
+            _FFMPEG, "-hide_banner",
             "-i", str(path),
             "-af", "loudnorm=print_format=json",
             "-f", "null", "-",
@@ -200,7 +213,7 @@ def _normalise_file(path: Path, gain_db: float) -> bool:
     try:
         codec_args = _get_ffmpeg_codec_args(path)
         cmd = [
-            "ffmpeg", "-y", "-i", str(path),
+            _FFMPEG, "-y", "-i", str(path),
             "-af", f"volume={gain_db:.4f}dB",
             *codec_args,
             "-map_metadata", "0",
@@ -299,7 +312,7 @@ def _convert_file(path: Path, target_format: str) -> tuple[bool, str]:
             codec_args = ["-codec:a", "flac", "-compression_level", "8"]
 
         cmd = [
-            "ffmpeg", "-y", "-i", str(path),
+            _FFMPEG, "-y", "-i", str(path),
             *codec_args,
             "-map_metadata", "0",
             "-id3v2_version", "3",
