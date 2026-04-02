@@ -2679,13 +2679,26 @@ function reopenLog() {
 function setSpinner(on) {
   document.getElementById('log-spinner').classList.toggle('active', on);
 }
+const LOG_MAX_LINES = 800;
+let _logScrollPending = false;
 function appendLog(text, cls = '') {
   const out  = document.getElementById('log-output');
   const line = document.createElement('div');
   line.className = 'log-line ' + cls;
   line.textContent = text;
   out.appendChild(line);
-  out.scrollTop = out.scrollHeight;
+  // Trim oldest lines to keep DOM size bounded (prevents browser freeze on large scans)
+  while (out.children.length > LOG_MAX_LINES) {
+    out.removeChild(out.firstChild);
+  }
+  // Debounce scroll via rAF — avoids forced reflow on every line
+  if (!_logScrollPending) {
+    _logScrollPending = true;
+    requestAnimationFrame(() => {
+      out.scrollTop = out.scrollHeight;
+      _logScrollPending = false;
+    });
+  }
 }
 function classifyLine(text) {
   const t = text.toLowerCase();
