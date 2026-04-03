@@ -147,17 +147,22 @@ def prune_files(
     file_paths: list[str],
     db,
     log=None,
+    *,
+    permanent: bool = False,
 ) -> dict:
     """
-    Remove file_paths from DjmdContent and move them to a timestamped
-    recovery folder inside ~/Trash/.
+    Remove file_paths from DjmdContent and either move them to a timestamped
+    recovery folder in ~/Trash (default) or permanently delete them in place.
+
+    permanent=True skips the Trash entirely and calls unlink() directly.
+    Use this when the source drive is full and there is no room to copy files
+    to the Mac before deleting them (e.g. a full NTFS backup drive).
 
     Order of operations:
-      1. Create recovery folder in Trash.
+      1. Create recovery folder in Trash (skipped when permanent=True).
       2. Remove DB entries (with the backup already created by write_db).
-      3. Move files to recovery folder.
-      4. Delete any source folders that are now empty (walks up toward
-         home but never removes home itself or anything above it).
+      3. Move or delete files.
+      4. Delete any source folders that are now empty.
 
     Returns a summary dict:
       { db_removed, files_moved, folders_removed, skipped, errors, trash_dir }
@@ -168,9 +173,13 @@ def prune_files(
             log(msg)
 
     stamp     = datetime.now().strftime("%Y%m%d_%H%M%S")
-    trash_dir = Path.home() / ".Trash" / f"SuperBox_Pruned_{stamp}"
-    trash_dir.mkdir(parents=True, exist_ok=True)
-    emit(f"Recovery folder → {trash_dir}")
+    if permanent:
+        trash_dir = None
+        emit("Mode: permanent delete (files will NOT be recoverable)")
+    else:
+        trash_dir = Path.home() / ".Trash" / f"SuperBox_Pruned_{stamp}"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        emit(f"Recovery folder → {trash_dir}")
     emit("")
 
     db_removed = 0
@@ -222,8 +231,8 @@ def prune_files(
 
     emit("")
 
-    # ── Step 2: Move files to recovery folder ──────────────────────────────
-    emit("  Moving files to recovery folder…")
+    # ── Step 2: Move or delete files ──────────────────────────────────────
+    emit("  Deleting files…" if permanent else "  Moving files to recovery folder…")
     source_parents: set[Path] = set()
     for path in file_paths:
         p = Path(path)
@@ -232,18 +241,21 @@ def prune_files(
             skipped += 1
             continue
         try:
-            dest = trash_dir / p.name
-            # Handle name collisions within the recovery folder
-            if dest.exists():
-                dest = trash_dir / f"{p.stem}__{p.parent.name}{p.suffix}"
-            shutil.move(str(p), str(dest))
+            if permanent:
+                p.unlink()
+            else:
+                dest = trash_dir / p.name
+                # Handle name collisions within the recovery folder
+                if dest.exists():
+                    dest = trash_dir / f"{p.stem}__{p.parent.name}{p.suffix}"
+                shutil.move(str(p), str(dest))
             source_parents.add(p.parent)
             files_moved += 1
-            emit(f"    Moved ✓  {p.name}")
+            emit(f"    {'Deleted' if permanent else 'Moved'} ✓  {p.name}")
         except Exception as exc:
-            msg = f"Could not move {p.name}: {exc}"
+            msg = f"Could not {'delete' if permanent else 'move'} {p.name}: {exc}"
             errors.append(msg)
-            emit(f"    Move ✗  {msg}")
+            emit(f"    {'Delete' if permanent else 'Move'} ✗  {msg}")
 
     emit("")
 
@@ -281,7 +293,7 @@ def prune_files(
 
     emit("═══ PRUNE SUMMARY ═══")
     emit(f"  Database entries removed : {db_removed}")
-    emit(f"  Files moved to recovery  : {files_moved}")
+    emit(f"  Files {'permanently deleted' if permanent else 'moved to recovery'} : {files_moved}")
     if folders_removed:
         emit(f"  Empty folders removed    : {folders_removed}")
     if skipped:
@@ -290,7 +302,8 @@ def prune_files(
         emit(f"  Errors                   : {len(errors)}")
         for err in errors:
             emit(f"    ⚠  {err}")
-    emit(f"  Recovery folder          : {trash_dir}")
+    if trash_dir:
+        emit(f"  Recovery folder          : {trash_dir}")
     emit("═════════════════════")
 
     return {

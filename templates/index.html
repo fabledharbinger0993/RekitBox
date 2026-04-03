@@ -535,6 +535,11 @@
         <!-- Action bar -->
         <div class="prune-action-bar">
           <span class="prune-selected-count" id="prune-selected-summary">Select files above to continue.</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--text-dim);cursor:pointer;user-select:none">
+            <input type="checkbox" id="prune-permanent-cb" style="accent-color:var(--danger)"
+                 onchange="document.getElementById('btn-prune-start').textContent = this.checked ? 'Delete Permanently →' : 'Move to Trash →'">
+            Delete permanently
+          </label>
           <button class="btn btn-prune-danger" id="btn-prune-start"
                   onclick="pruneStep1()" disabled>
             Move to Trash →
@@ -562,8 +567,8 @@
       <button class="confirm-panel-cancel" onclick="cancelPrune()">✕ Cancel</button>
     </div>
     <div class="confirm-panel-body">
-      <p>You're about to move <strong id="c1-count">—</strong> files to a recovery folder in Trash and remove them from the RekordBox database.</p>
-      <p class="confirm-detail">Nothing is permanently deleted. Files land in <code>~/.Trash/SuperBox_Pruned_[timestamp]/</code> and stay there until you empty Trash yourself.</p>
+      <p>You're about to remove <strong id="c1-count">—</strong> files from the RekordBox database.</p>
+      <p class="confirm-detail" id="c1-mode-note">Files will be moved to a recovery folder in Trash. Nothing is permanently deleted.</p>
     </div>
     <div class="confirm-panel-footer">
       <button class="btn btn-ghost" onclick="cancelPrune()">Cancel</button>
@@ -2600,8 +2605,15 @@ async function previewFile(path) {
 function pruneStep1() {
   if (pruneSelected.size === 0) return;
   const n = pruneSelected.size;
-  document.getElementById('c1-count').textContent =
-    `${n} file${n > 1 ? 's' : ''}`;
+  const perm = document.getElementById('prune-permanent-cb').checked;
+  document.getElementById('c1-count').textContent = `${n} file${n > 1 ? 's' : ''}`;
+  document.getElementById('c1-mode-note').textContent = perm
+    ? '⚠ Permanent delete mode — files will be unlinked directly. This cannot be undone.'
+    : 'Files will be moved to a recovery folder in Trash. Nothing is permanently deleted.';
+  document.getElementById('c1-mode-note').style.color = perm ? 'var(--danger)' : '';
+  document.getElementById('btn-execute-prune').textContent = perm
+    ? 'Execute — Delete Permanently'
+    : 'Execute — Move to Trash';
   _openConfirm('confirm-step1');
 }
 
@@ -2652,7 +2664,8 @@ async function executePrune() {
   const statusEl = document.getElementById('prune-status-msg');
   if (statusEl) statusEl.style.display = 'none';
 
-  const paths = [...pruneSelected];
+  const paths   = [...pruneSelected];
+  const permanent = document.getElementById('prune-permanent-cb').checked;
 
   // Stage the paths server-side to avoid blowing the 256 KB header limit
   // when passing thousands of file paths as a query string.
@@ -2661,7 +2674,7 @@ async function executePrune() {
     const res = await fetch('/api/prune/stage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths }),
+      body: JSON.stringify({ paths, permanent }),
     });
     const data = await res.json();
     if (!res.ok || !data.token) throw new Error(data.error || 'stage failed');
@@ -2671,12 +2684,14 @@ async function executePrune() {
     return;
   }
 
-  const url = `/api/run/prune?token=${encodeURIComponent(token)}`;
-  runCommand(url, `Prune — ${paths.length} duplicate${paths.length > 1 ? 's' : ''} moved to Trash`, (exitCode) => {
+  const verb   = permanent ? 'deleted permanently' : 'moved to Trash';
+  const label  = permanent ? 'deleted' : 'moved to Trash';
+  const url    = `/api/run/prune?token=${encodeURIComponent(token)}`;
+  runCommand(url, `Prune — ${paths.length} duplicate${paths.length > 1 ? 's' : ''} ${verb}`, (exitCode) => {
     if (exitCode === 0) {
       pruneSelected.clear();
       _updatePruneSummary();
-      _showPruneStatus(`✓ Prune complete — ${paths.length} file${paths.length > 1 ? 's' : ''} sent to Trash. Check the report for details.`, false);
+      _showPruneStatus(`✓ Prune complete — ${paths.length} file${paths.length > 1 ? 's' : ''} ${label}. Check the report for details.`, false);
     } else {
       _showPruneStatus('✗ Prune failed — see the log panel (View Output) for details.', true);
     }

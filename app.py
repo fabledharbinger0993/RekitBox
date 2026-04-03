@@ -569,7 +569,7 @@ def api_duplicates():
 # Short-lived server-side store for prune path lists.
 # Avoids passing potentially thousands of paths as a query-string (which
 # exceeds waitress's 256 KB header limit on large libraries).
-_prune_token_store: dict[str, list[str]] = {}
+_prune_token_store: dict[str, dict] = {}   # token → {paths, permanent}
 
 # Report cache: csv_path_str → {"groups": [...], "remove_paths": [...], "keep_paths": [...]}
 # Populated on first load, reused for pagination and Select All requests.
@@ -579,7 +579,7 @@ _report_cache: dict[str, dict] = {}
 @app.route("/api/prune/stage", methods=["POST"])
 def api_prune_stage():
     """
-    Accept a JSON body {"paths": [...]} and return a single-use token.
+    Accept a JSON body {"paths": [...], "permanent": false} and return a single-use token.
     The token is consumed by GET /api/run/prune?token=<uuid>.
     """
     try:
@@ -588,7 +588,10 @@ def api_prune_stage():
         if not isinstance(paths, list):
             return jsonify({"error": "paths must be a list"}), 400
         token = str(uuid.uuid4())
-        _prune_token_store[token] = paths
+        _prune_token_store[token] = {
+            "paths":     paths,
+            "permanent": bool(data.get("permanent", False)),
+        }
         return jsonify({"token": token})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -742,8 +745,10 @@ def api_run_prune():
     returns a valid SSE stream — never a bare JSON 4xx response that would
     confuse EventSource and surface only as a silent "Connection error".
     """
-    token = request.args.get("token", "")
-    paths: list[str] = _prune_token_store.pop(token, [])
+    token     = request.args.get("token", "")
+    staged    = _prune_token_store.pop(token, {})
+    paths: list[str] = staged.get("paths", [])
+    permanent: bool  = staged.get("permanent", False)
 
     log_q: queue.Queue = queue.Queue()
 
@@ -766,7 +771,8 @@ def api_run_prune():
             from config import DJMT_DB as _DB      # noqa: PLC0415
 
             with write_db(_DB) as db:
-                prune_files(paths, db, log=lambda m: log_q.put(("line", m)))
+                prune_files(paths, db, log=lambda m: log_q.put(("line", m)),
+                            permanent=permanent)
 
             log_q.put(("done", 0))
         except Exception as exc:
