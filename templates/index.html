@@ -522,7 +522,15 @@
         </div>
 
         <!-- Groups list -->
+        <div id="prune-summary-banner" style="display:none;padding:8px 12px;margin-bottom:10px;background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.2);border-radius:6px;font-size:.82rem;color:var(--text-dim)"></div>
         <div id="prune-groups"></div>
+
+        <!-- Pagination -->
+        <div id="prune-pagination" style="display:none;align-items:center;gap:12px;padding:10px 0;margin-top:4px">
+          <button class="btn" id="prune-prev-btn" onclick="_loadPrunePage(prunePage-1)">← Prev</button>
+          <span id="prune-page-info" style="font-size:.82rem;color:var(--text-dim);flex:1;text-align:center"></span>
+          <button class="btn" id="prune-next-btn" onclick="_loadPrunePage(prunePage+1)">Next →</button>
+        </div>
 
         <!-- Action bar -->
         <div class="prune-action-bar">
@@ -2379,44 +2387,56 @@ function runNovelty() {
 }
 
 /* ── Prune Duplicates ──────────────────────────────────────────────────────── */
-let pruneGroups    = [];          // loaded from CSV
-let pruneSelected  = new Set();   // file_paths checked for removal
-let saState        = null;        // 'best' | 'lower' | null
+let pruneGroups      = [];          // current page's groups
+let pruneSelected    = new Set();   // file_paths checked for removal
+let saState          = null;        // 'best' | 'lower' | null
+let prunePage        = 0;
+let prunePageSize    = 200;
+let pruneTotalGroups = 0;
+let pruneTotalRemove = 0;
+let pruneCsvPath     = '';
 
 async function loadPruneReport() {
-  const csvPath = document.getElementById('prune-csv-path').value.trim();
-  const url = '/api/duplicates/load' + (csvPath ? '?csv_path=' + encodeURIComponent(csvPath) : '');
+  pruneCsvPath = document.getElementById('prune-csv-path').value.trim();
+  prunePage    = 0;
+  pruneSelected.clear();
+  saState = null;
 
   const btn = document.querySelector('[onclick="loadPruneReport()"]');
   btn.disabled = true;
   btn.textContent = 'Loading…';
 
   try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (!res.ok) { alert('Could not load report:\n' + data.error); return; }
-
-    pruneGroups   = data.groups;
-    pruneSelected = new Set();
-    saState       = null;
-
-    // Default: pre-select all lower-quality copies
-    pruneGroups.forEach(g =>
-      g.entries.filter(e => e.action === 'REVIEW_REMOVE')
-               .forEach(e => pruneSelected.add(e.file_path))
-    );
-    saState = 'lower';
-
-    _renderPruneGroups();
-    document.getElementById('prune-review-area').style.display = 'block';
-    _updateSaButtons();
-    _updatePruneSummary();
+    await _loadPrunePage(0);
+    // Auto-select all lower-quality copies across the full report
+    await selectAllLower();
   } catch (err) {
     alert('Error loading report: ' + err);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Load Report';
   }
+}
+
+async function _loadPrunePage(page) {
+  let url = `/api/duplicates/load?page=${page}&per_page=${prunePageSize}`;
+  if (pruneCsvPath) url += '&csv_path=' + encodeURIComponent(pruneCsvPath);
+
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) { alert('Could not load report:\n' + data.error); return; }
+
+  pruneGroups      = data.groups;
+  prunePage        = data.page;
+  pruneTotalGroups = data.total_groups;
+  if (data.total_remove != null) pruneTotalRemove = data.total_remove;
+
+  _renderPruneGroups();
+  _renderPrunePagination();
+  document.getElementById('prune-review-area').style.display = 'block';
+  _syncCheckboxes();
+  _updateSaButtons();
+  _updatePruneSummary();
 }
 
 function _renderPruneGroups() {
@@ -2479,28 +2499,55 @@ function togglePruneFile(path, checked) {
   _updatePruneSummary();
 }
 
-function selectAllBest() {
-  pruneSelected.clear();
-  pruneGroups.forEach(g =>
-    g.entries.filter(e => e.action === 'KEEP')
-             .forEach(e => pruneSelected.add(e.file_path))
-  );
-  saState = 'best';
-  _syncCheckboxes();
-  _updateSaButtons();
-  _updatePruneSummary();
+async function _fetchAllPaths() {
+  let url = '/api/duplicates/remove-paths';
+  if (pruneCsvPath) url += '?csv_path=' + encodeURIComponent(pruneCsvPath);
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
 }
 
-function selectAllLower() {
-  pruneSelected.clear();
-  pruneGroups.forEach(g =>
-    g.entries.filter(e => e.action === 'REVIEW_REMOVE')
-             .forEach(e => pruneSelected.add(e.file_path))
-  );
-  saState = 'lower';
-  _syncCheckboxes();
-  _updateSaButtons();
-  _updatePruneSummary();
+async function selectAllBest() {
+  try {
+    const data = await _fetchAllPaths();
+    pruneSelected = new Set(data.keep_paths);
+    saState = 'best';
+    _syncCheckboxes();
+    _updateSaButtons();
+    _updatePruneSummary();
+  } catch (err) { alert('Error: ' + err); }
+}
+
+async function selectAllLower() {
+  try {
+    const data = await _fetchAllPaths();
+    pruneSelected = new Set(data.remove_paths);
+    saState = 'lower';
+    _syncCheckboxes();
+    _updateSaButtons();
+    _updatePruneSummary();
+  } catch (err) { alert('Error: ' + err); }
+}
+
+function _renderPrunePagination() {
+  const totalPages = Math.ceil(pruneTotalGroups / prunePageSize);
+  const pg = document.getElementById('prune-pagination');
+  if (totalPages <= 1) { pg.style.display = 'none'; } else { pg.style.display = 'flex'; }
+
+  const start = prunePage * prunePageSize + 1;
+  const end   = Math.min((prunePage + 1) * prunePageSize, pruneTotalGroups);
+  document.getElementById('prune-page-info').textContent =
+    `Groups ${start.toLocaleString()}–${end.toLocaleString()} of ${pruneTotalGroups.toLocaleString()}`;
+  document.getElementById('prune-prev-btn').disabled = prunePage === 0;
+  document.getElementById('prune-next-btn').disabled = prunePage >= totalPages - 1;
+
+  const banner = document.getElementById('prune-summary-banner');
+  if (pruneTotalGroups > 0) {
+    banner.style.display = 'block';
+    banner.textContent =
+      `${pruneTotalGroups.toLocaleString()} duplicate groups — ${pruneTotalRemove.toLocaleString()} lower-quality copies identified`;
+  }
 }
 
 function _syncCheckboxes() {

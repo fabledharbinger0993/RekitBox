@@ -571,6 +571,10 @@ def api_duplicates():
 # exceeds waitress's 256 KB header limit on large libraries).
 _prune_token_store: dict[str, list[str]] = {}
 
+# Report cache: csv_path_str → {"groups": [...], "remove_paths": [...], "keep_paths": [...]}
+# Populated on first load, reused for pagination and Select All requests.
+_report_cache: dict[str, dict] = {}
+
 
 @app.route("/api/prune/stage", methods=["POST"])
 def api_prune_stage():
@@ -594,10 +598,18 @@ def api_prune_stage():
 def api_duplicates_load():
     """
     Load a duplicate_report.csv, enrich with live disk + DB data,
-    and return structured JSON for the prune UI.
+    and return a paginated slice of groups for the prune UI.
     Falls back to the default report path if no csv_path is given.
+
+    Query params:
+      csv_path  — path to the CSV (optional)
+      page      — 0-based page index (default 0)
+      per_page  — groups per page (default 200)
     """
     csv_path_str = request.args.get("csv_path", "").strip()
+    page     = max(0, int(request.args.get("page",     0)))
+    per_page = max(1, int(request.args.get("per_page", 200)))
+
     csv_path = (
         Path(csv_path_str)
         if csv_path_str
@@ -607,40 +619,94 @@ def api_duplicates_load():
     if not csv_path.exists():
         return jsonify({"error": f"Report not found: {csv_path}"}), 404
 
+    cache_key = str(csv_path.resolve())
+
     try:
-        from pruner import load_report          # noqa: PLC0415
-        from db_connection import read_db       # noqa: PLC0415
-        from config import DJMT_DB as _DB      # noqa: PLC0415
+        if cache_key not in _report_cache:
+            from pruner import load_report          # noqa: PLC0415
+            from db_connection import read_db       # noqa: PLC0415
+            from config import DJMT_DB as _DB      # noqa: PLC0415
 
-        with read_db(_DB) as db:
-            groups = load_report(csv_path, db)
+            with read_db(_DB) as db:
+                groups = load_report(csv_path, db)
 
-        payload = [
-            {
-                "group_id": g.group_id,
-                "entries": [
-                    {
-                        "action":        e.action,
-                        "rank":          e.rank,
-                        "file_path":     e.file_path,
-                        "filename":      e.filename,
-                        "file_size_mb":  round(e.file_size_mb, 2),
-                        "bpm":           e.bpm,
-                        "key":           e.key,
-                        "format_ext":    e.format_ext,
-                        "format_tier":   e.format_tier,
-                        "exists_on_disk":e.exists_on_disk,
-                        "in_db":         e.in_db,
-                    }
-                    for e in g.entries
+            all_groups = [
+                {
+                    "group_id": g.group_id,
+                    "entries": [
+                        {
+                            "action":         e.action,
+                            "rank":           e.rank,
+                            "file_path":      e.file_path,
+                            "filename":       e.filename,
+                            "file_size_mb":   round(e.file_size_mb, 2),
+                            "bpm":            e.bpm,
+                            "key":            e.key,
+                            "format_ext":     e.format_ext,
+                            "format_tier":    e.format_tier,
+                            "exists_on_disk": e.exists_on_disk,
+                            "in_db":          e.in_db,
+                        }
+                        for e in g.entries
+                    ],
+                }
+                for g in groups
+            ]
+            _report_cache[cache_key] = {
+                "groups":       all_groups,
+                "remove_paths": [
+                    e["file_path"]
+                    for g in all_groups
+                    for e in g["entries"]
+                    if e["action"] == "REVIEW_REMOVE"
+                ],
+                "keep_paths": [
+                    e["file_path"]
+                    for g in all_groups
+                    for e in g["entries"]
+                    if e["action"] == "KEEP"
                 ],
             }
-            for g in groups
-        ]
-        return jsonify({"groups": payload, "csv_path": str(csv_path)})
+
+        cached      = _report_cache[cache_key]
+        all_groups  = cached["groups"]
+        total       = len(all_groups)
+        start       = page * per_page
+        page_groups = all_groups[start : start + per_page]
+
+        return jsonify({
+            "groups":        page_groups,
+            "total_groups":  total,
+            "total_remove":  len(cached["remove_paths"]),
+            "page":          page,
+            "per_page":      per_page,
+            "csv_path":      str(csv_path),
+        })
 
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/duplicates/remove-paths")
+def api_duplicates_remove_paths():
+    """
+    Return the full remove_paths and keep_paths lists for Select All operations.
+    The report must have been loaded via /api/duplicates/load first.
+    """
+    csv_path_str = request.args.get("csv_path", "").strip()
+    csv_path = (
+        Path(csv_path_str)
+        if csv_path_str
+        else Path.home() / "rekordbox-toolkit" / "duplicate_report.csv"
+    )
+    cache_key = str(csv_path.resolve())
+    if cache_key not in _report_cache:
+        return jsonify({"error": "Report not loaded — call /api/duplicates/load first"}), 400
+    cached = _report_cache[cache_key]
+    return jsonify({
+        "remove_paths": cached["remove_paths"],
+        "keep_paths":   cached["keep_paths"],
+    })
 
 
 @app.route("/api/open-file")
