@@ -343,10 +343,19 @@ def api_pipeline():
         name   = s.get("name", stype)
 
         if stype == "organize":
+            src_list = cfg.get("sources") or [cfg.get("source", "")]
+            if isinstance(src_list, str):
+                src_list = [src_list]
             cmd = [sys.executable, str(CLI_PATH), "organize",
-                   cfg.get("source", ""), cfg.get("target", "")]
+                   src_list[0], cfg.get("target", "")]
+            for extra in src_list[1:]:
+                if extra:
+                    cmd += ["--also-scan", extra]
             if not dry_run:
                 cmd.append("--no-dry-run")
+            org_mode = cfg.get("mode", "assimilate")
+            if org_mode == "integrate":
+                cmd += ["--mode", "integrate"]
             if cfg.get("mix_threshold"):
                 cmd += ["--mix-threshold", str(cfg["mix_threshold"])]
             if cfg.get("workers", 1) > 1:
@@ -407,15 +416,21 @@ def api_pipeline():
 
 @app.route("/api/run/organize")
 def api_organize():
-    source = request.args.get("source", "").strip()
-    target = request.args.get("target", "").strip()
-    if not source or not target:
-        return jsonify({"error": "source and target are required"}), 400
+    sources = [s.strip() for s in request.args.getlist("source") if s.strip()]
+    target  = request.args.get("target", "").strip()
+    if not sources or not target:
+        return jsonify({"error": "at least one source and a target are required"}), 400
 
-    cmd = [sys.executable, str(CLI_PATH), "organize", source, target]
+    cmd = [sys.executable, str(CLI_PATH), "organize", sources[0], target]
+    for extra in sources[1:]:
+        cmd += ["--also-scan", extra]
 
     if request.args.get("no_dry_run") == "1":
         cmd.append("--no-dry-run")
+
+    org_mode = request.args.get("mode", "assimilate").strip()
+    if org_mode == "integrate":
+        cmd += ["--mode", "integrate"]
 
     workers = request.args.get("workers", "1").strip()
     if workers.isdigit() and int(workers) > 1:
