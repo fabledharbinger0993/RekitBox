@@ -873,7 +873,7 @@ Examples:
     p_organize.set_defaults(func=cmd_organize)
 
     # ── novelty ───────────────────────────────────────────────────────────────
-    p_novelty = subparsers.add_parser(
+    p_novelty = sub.add_parser(
         "novelty",
         help="Find and copy tracks that exist only on the source (not in destination)",
     )

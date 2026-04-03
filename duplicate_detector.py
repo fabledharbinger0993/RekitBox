@@ -24,25 +24,39 @@ Fingerprint note: acoustid.fingerprint_file may return the fingerprint as
 bytes in some pyacoustid versions. fingerprint_file() decodes bytes to str
 automatically so fp_map keys are always str.
 
+Trash-rescue logic:
+  After fingerprinting, any file whose ONLY known copy lives inside a
+  trash or trash-adjacent folder is captured in ScanResult.unique_in_trash.
+  These files are NOT included in the pruning CSV — they require manual
+  rescue. SuperBox does not offer an automated step for this. A separate
+  plain-text rescue report is written via write_trash_rescue_report().
+
+  Two cases are covered:
+    1. Truly unique: single fingerprint match, file is in a trash folder.
+    2. Trapped KEEP: duplicate group where the best copy is in a trash
+       folder. These stay in the CSV (marked KEEP, safe from the pruner)
+       but are also listed in the rescue report and flagged in the CSV
+       with keep_in_trash=True.
+
 Public interface:
     fingerprint_file(path) -> str | None
-    scan_duplicates(root)  -> list[DuplicateGroup]
-    write_csv_report(groups, output_path)
+    scan_duplicates(root)  -> ScanResult
+    write_csv_report(result, output_path)
+    write_trash_rescue_report(result, output_path)
 """
 
 import concurrent.futures
 import csv
+import difflib
 import json
 import logging
-import os
 import re
-import shutil
-import subprocess
 import time
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
+from datetime import datetime
 from pathlib import Path
 
+import acoustid
 from mutagen import File as MutagenFile
 
 from config import AUDIO_EXTENSIONS, MUSIC_ROOT, SKIP_DIRS, SKIP_PREFIXES
@@ -51,235 +65,127 @@ log = logging.getLogger(__name__)
 
 _LOG_EVERY: int = 100
 
+# ─── Trash detection ──────────────────────────────────────────────────────────
+
+# Canonical trash-intent words. Checked against every folder component in the
+# full path (case-insensitive), not just the immediate parent — so
+# /Volumes/Drive/trash/subfolder/file.mp3 is caught even though the immediate
+# parent is "subfolder".
+#
+# Exact matches are checked first (fast path). If no exact match, fuzzy
+# matching kicks in: a folder component with similarity ≥ _TRASH_FUZZY_CUTOFF
+# to any canonical word is also flagged. This catches common typos like
+# "trahs", "recylce", "jnuk", "delet", "tosss", etc.
+#
+# Deliberate non-inclusions:
+#   "old", "archive", "remove" — too broad; would catch legitimate folder names
+#   like "old school", "archived sets", "removed vocals".
+_TRASH_CANONICAL: frozenset[str] = frozenset({
+    # trash family
+    "trash",
+    ".trash",
+    "thrash",       # common typo
+    # recycle family
+    "recycle",
+    "recycled",
+    "recycling",
+    "recycles",
+    "$recycle.bin",
+    # delete family
+    "delete",
+    "deleted",
+    "deletes",
+    "deletion",
+    "to delete",
+    "to_delete",
+    "to-delete",
+    # toss family
+    "toss",
+    "tossed",
+    "tosses",
+    # junk family
+    "junk",
+    "junked",
+    "junk bin",
+    "junk_bin",
+    # purge family
+    "purge",
+    "purged",
+    "purges",
+    # discard family
+    "discard",
+    "discarded",
+    "discards",
+    # dump family
+    "dump",
+    "dumped",
+    "dumps",
+    # other clear intent
+    "waste",
+    "wasted",
+    "garbage",
+    ".deleted",
+})
+
+# Similarity threshold for fuzzy matching (0–1). 0.82 allows roughly 1–2
+# character errors on typical 5–9 character words while avoiding false
+# positives on short unrelated words.
+_TRASH_FUZZY_CUTOFF: float = 0.82
+
+# Minimum length for fuzzy matching — very short folder names (≤3 chars)
+# have too many accidental near-matches to fuzz safely.
+_TRASH_FUZZY_MIN_LEN: int = 4
+
+
+def _folder_is_trash(name: str) -> bool:
+    """
+    Return True if a single folder name matches a trash-intent word.
+    Checks exact match first, then fuzzy similarity.
+    Also tokenises names that contain separators (spaces, underscores, dashes)
+    so "to_delete" matches even if the canonical form is "to delete".
+    """
+    normalised = name.lower().strip()
+
+    # Exact match
+    if normalised in _TRASH_CANONICAL:
+        return True
+
+    # Normalise separators and re-check (handles "to_delete" vs "to delete")
+    sep_normalised = normalised.replace("_", " ").replace("-", " ")
+    if sep_normalised in _TRASH_CANONICAL:
+        return True
+
+    # Fuzzy match against each canonical word (skip very short names)
+    if len(normalised) >= _TRASH_FUZZY_MIN_LEN:
+        matches = difflib.get_close_matches(
+            normalised,
+            _TRASH_CANONICAL,
+            n=1,
+            cutoff=_TRASH_FUZZY_CUTOFF,
+        )
+        if matches:
+            log.debug(
+                "Trash fuzzy match: %r ~ %r (cutoff=%.2f)",
+                name, matches[0], _TRASH_FUZZY_CUTOFF,
+            )
+            return True
+
+    return False
+
+
+def _is_trash_adjacent(path: Path) -> bool:
+    """
+    Return True if any component of path's parent folders is a trash folder.
+    Checks exact and fuzzy matches against _TRASH_CANONICAL.
+    """
+    return any(_folder_is_trash(part) for part in path.parts)
+
 # Pre-filter tolerances
 _BPM_TOLERANCE_PCT: float = 0.03   # ±3% — accounts for detection variance
 _DURATION_TOLERANCE_SEC: float = 3.0  # ±3 seconds
 
-# Fingerprint analysis window.
-# DJ tracks often have 16–32 bar intros before harmonic content arrives.
-# Skipping 30 s lands us in the body of most house/techno/dance tracks,
-# giving Chromaprint the melodic material it needs for reliable matching.
-# Changing either constant invalidates existing cache entries (they store
-# fp_offset and fp_length so mismatches are detected automatically).
-_FP_OFFSET_SEC: int = 45   # seconds to skip at the start
-_FP_LENGTH_SEC: int = 45   # seconds to analyse after the offset
-
-# Filename similarity gate.
-# After fingerprints match, at least one pair in the group must have filenames
-# this similar (0.0–1.0) or the group is rejected as a false positive.
-# Catches shared sample loops and common breakdowns that hash identically.
-# 0.4 = 40% character overlap after normalisation — loose enough for
-# "Track_PN.mp3" vs "Track (Extended).aiff", tight enough to reject
-# "Artist A - Song X.mp3" vs "Artist B - Song Y.mp3".
-_FILENAME_SIMILARITY_MIN: float = 0.4
-
-# ─── Version-tag constants ────────────────────────────────────────────────────
-#
-# After the acoustic fingerprint gate passes, a fingerprint group may still
-# contain different *releases* of the same recording — e.g. the original and a
-# dub mix share enough audio to match. These are not duplicate copies; they are
-# distinct products that should be kept. The version-tag splitter separates
-# them by extracting a normalised version phrase from each filename and
-# bucketing: files with the same tag (or both with no tag) remain as
-# duplicates; files with *different* tags become separate groups.
-
-# Core keywords that mark a file as a specific version/mix.
-# Matched case-insensitively within the extracted phrase.
-_VERSION_CORE_KW = re.compile(
-    r'\b(remix|rmx|dub|mix|instrumental|instru|edit|version|vip|flip|'
-    r'rework|bootleg|mashup|remaster(?:ed)?|reprise|revision|reconstruction)\b',
-    re.IGNORECASE,
-)
-
-# Version phrases that mean "original release" — treated the same as no tag so
-# a bare "Track.aiff" and "Track - Original Mix.aiff" are still flagged as
-# duplicates of each other (they almost always are).
-_ORIGINAL_TAG_NORM: frozenset[str] = frozenset({
-    'original', 'original mix', 'original version', 'original edit',
-    'original club mix', 'main mix', 'main', 'album version', 'album mix',
-})
-
-
-def _normalise_stem(path: Path) -> str:
-    """
-    Strip noise from a filename stem for similarity comparison.
-    Removes: leading track numbers, _PN/_MIK suffixes, parenthetical
-    version tags, extra whitespace. Lowercases everything.
-    """
-    s = path.stem.lower()
-    s = re.sub(r'_pn(_pn)*$', '', s)           # _PN, _PN_PN
-    s = re.sub(r'_mik$', '', s)                 # _MIK
-    s = re.sub(r'^\d{1,3}[\s.\-–]+', '', s)    # leading track numbers
-    s = re.sub(r'\s*[\(\[].*(remix|edit|mix|dub|version|extended|radio|inst).*[\)\]]', '', s)
-    s = re.sub(r'[-_]+', ' ', s)
-    s = re.sub(r'\s+', ' ', s).strip()
-    return s
-
-
-def _filename_similarity(a: Path, b: Path) -> float:
-    """Return 0.0–1.0 similarity between two track filenames after normalisation."""
-    return SequenceMatcher(None, _normalise_stem(a), _normalise_stem(b)).ratio()
-
-
-def _extract_version_tag(path: Path) -> str | None:
-    """
-    Extract and normalise a version tag from a filename stem.
-
-    Scans the stem for a version phrase (remix, dub, mix, instrumental,
-    edit, etc.) at the tail, inside parentheses/brackets, or after a dash
-    separator — in that order of preference. Returns a lowercase,
-    whitespace-normalised string, or None when:
-      • no version keyword is found, or
-      • the phrase is an "original" variant ("Original Mix", etc.), which is
-        treated identically to having no version tag at all.
-
-    Examples
-    --------
-    "Track - Club Mix.aiff"             → "club mix"
-    "Artist - Track [Danny Dub].mp3"    → "danny dub"
-    "Track (Deep Mix).aiff"             → "deep mix"
-    "01 - Track Remix.mp3"              → "remix"
-    "Track Instrumental.aiff"           → "instrumental"
-    "Track - Original Mix.aiff"         → None   (original = base version)
-    "Artist - Track Name.aiff"          → None   (no version)
-    """
-    stem = path.stem
-    # Strip leading track numbers and PN/MIK suffixes so they don't
-    # accidentally land inside the version-phrase window.
-    stem = re.sub(r'^(?:track\s+)?\d{1,3}[\s.\-\u2013\u2014]+', '', stem, flags=re.IGNORECASE)
-    stem = re.sub(r'_(?:pn|mik)(?:_pn)*$', '', stem, flags=re.IGNORECASE)
-
-    candidate: str | None = None
-
-    # ① Last parenthetical or bracketed suffix — most explicit form.
-    m = re.search(r'[\(\[]\s*([^()\[\]]{2,60}?)\s*[\)\]]\s*$', stem)
-    if m and _VERSION_CORE_KW.search(m.group(1)):
-        candidate = m.group(1)
-
-    # ② Dash-separated suffix (no bracketed version found).
-    if candidate is None:
-        m = re.search(r'[-\u2013\u2014]\s*(.{2,60}?)\s*$', stem)
-        if m and _VERSION_CORE_KW.search(m.group(1)):
-            candidate = m.group(1)
-
-    # ③ Bare version keyword sitting at the very end of the stem.
-    if candidate is None:
-        m = re.search(
-            r'(?:^|\s)((?:[\w]+\s+){0,3}'
-            r'(?:remix|rmx|dub|mix|instrumental|instru|edit|vip|flip|rework|bootleg))'
-            r'\s*$',
-            stem,
-            re.IGNORECASE,
-        )
-        if m:
-            candidate = m.group(1)
-
-    if candidate is None:
-        return None
-
-    tag = re.sub(r'\s+', ' ', candidate.lower()).strip()
-
-    # "original mix" and equivalents → same tier as no version tag
-    if tag in _ORIGINAL_TAG_NORM:
-        return None
-
-    return tag
-
-
-def _split_group_by_version(paths: list[Path]) -> list[list[Path]]:
-    """
-    Split a fingerprint-matched group into sub-groups by version tag.
-
-    Files with the same version tag (or both with None) stay in the same
-    sub-group — they are duplicate copies of the same release. Files with
-    *different* tags are separated — they are different releases of the same
-    recording (e.g. "Club Mix" vs "Dub Mix") and should not be flagged as
-    duplicates of each other.
-
-    Sub-groups with fewer than 2 files are omitted (a single file has no
-    duplicate within its version).
-
-    Returns the original list unchanged (wrapped in a list) when no
-    version differences are detected, keeping the common-case overhead to
-    one set-of-tags comparison.
-    """
-    from collections import defaultdict  # noqa: PLC0415
-
-    tags = {p: _extract_version_tag(p) for p in paths}
-    unique_tags = set(tags.values())
-
-    if len(unique_tags) == 1:
-        # All files share the same version tag (or all None) — nothing to split.
-        return [paths]
-
-    buckets: dict[str | None, list[Path]] = defaultdict(list)
-    for path, tag in tags.items():
-        buckets[tag].append(path)
-
-    singletons = [p for grp in buckets.values() if len(grp) == 1 for p in grp]
-    if singletons:
-        log.debug(
-            "Version split: %d file(s) have no same-version duplicate and will be "
-            "excluded from all groups: %s",
-            len(singletons),
-            [p.name for p in singletons],
-        )
-
-    return [grp for grp in buckets.values() if len(grp) >= 2]
-
-
-# Build an extended environment for subprocess calls so fpcalc is found
-# even when the server process has a minimal PATH (e.g. launched via Automator).
-_FPCALC_ENV = os.environ.copy()
-_FPCALC_ENV["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + _FPCALC_ENV.get("PATH", "")
-
-
-def _find_fpcalc() -> str:
-    """Locate fpcalc binary, checking PATH (extended) then common Homebrew paths."""
-    found = shutil.which("fpcalc", path=_FPCALC_ENV["PATH"])
-    if found:
-        return found
-    for candidate in ["/opt/homebrew/bin/fpcalc", "/usr/local/bin/fpcalc"]:
-        if Path(candidate).is_file():
-            return candidate
-    return "fpcalc"   # will produce a clear FileNotFoundError at call time
-
-
-def _check_fpcalc_offset_support(fpcalc: str) -> bool:
-    """
-    Return True if this fpcalc build supports the -offset flag.
-    -offset was added in chromaprint 1.5.0 (2020). Older Homebrew installs
-    may not have it. Upgrade with: brew upgrade chromaprint
-    """
-    try:
-        # Pass a nonexistent file — we only care whether fpcalc rejects
-        # -offset before it even tries to open the file.
-        result = subprocess.run(
-            [fpcalc, "-offset", "0", "-length", "1", "__superbox_offset_check__"],
-            capture_output=True, text=True, timeout=5, env=_FPCALC_ENV,
-        )
-        return "Unknown option -offset" not in result.stderr
-    except Exception:
-        return False
-
-
-_FPCALC = _find_fpcalc()
-_FPCALC_OFFSET_OK = _check_fpcalc_offset_support(_FPCALC)
-
-log_startup = logging.getLogger(__name__)
-log_startup.debug("fpcalc resolved to: %s", _FPCALC)
-if not _FPCALC_OFFSET_OK:
-    log_startup.warning(
-        "fpcalc does not support -offset (chromaprint < 1.5.0) — "
-        "fingerprinting from the start of each file. "
-        "Upgrade for intro-skipping: brew upgrade chromaprint"
-    )
-
 
 # ─── Scan index pre-filter ────────────────────────────────────────────────────
-
-_STREAMING_PREFIXES = ("soundcloud:", "tidal:", "beatport-streaming:")
-
 
 def _load_scan_index() -> dict[str, dict]:
     """Load scan_index.json written by audio_processor. Returns {} if absent."""
@@ -293,102 +199,6 @@ def _load_scan_index() -> dict[str, dict]:
     except Exception as exc:
         log.warning("Could not load scan index: %s", exc)
         return {}
-
-
-def _load_db_index() -> dict[str, dict]:
-    """
-    Load BPM, key, and duration for every imported track directly from the
-    Rekordbox database (read-only — safe while Rekordbox is open).
-
-    The DB is the authoritative source: it covers all 27k+ imported tracks,
-    not just files that have been through audio_processor since the last run.
-
-    BPM is stored in DjmdContent as int×100 (e.g. 128 BPM → 12800).
-    KeyID is a FK to DjmdKey.ScaleName (e.g. "Am", "C#m").
-    TotalTime is stored in milliseconds.
-
-    Returns {} on any failure — pre-filter gracefully falls back to scan_index.
-    """
-    try:
-        from db_connection import read_db   # noqa: PLC0415
-        from config import DJMT_DB          # noqa: PLC0415
-
-        with read_db(DJMT_DB) as db:
-            # Build KeyID → ScaleName lookup
-            key_map: dict[str, str] = {
-                str(k.ID): k.ScaleName
-                for k in db.get_key().all()
-            }
-
-            index: dict[str, dict] = {}
-            for track in db.get_content().all():
-                path_str = track.FolderPath
-                if not path_str:
-                    continue
-                if any(path_str.startswith(p) for p in _STREAMING_PREFIXES):
-                    continue
-
-                # BPM: stored as int×100 — divide to get real BPM
-                bpm: str | None = None
-                try:
-                    if track.BPM and int(track.BPM) > 0:
-                        bpm = str(round(int(track.BPM) / 100, 2))
-                except (TypeError, ValueError):
-                    pass
-
-                # Key: resolve via KeyID → DjmdKey.ScaleName
-                key: str | None = None
-                try:
-                    if track.KeyID:
-                        key = key_map.get(str(track.KeyID))
-                except (TypeError, AttributeError):
-                    pass
-
-                # Duration: TotalTime is in milliseconds in Rekordbox 6
-                duration_sec: float | None = None
-                try:
-                    tt = track.TotalTime
-                    if tt and int(tt) > 0:
-                        duration_sec = round(int(tt) / 1000, 1)
-                except (TypeError, ValueError, AttributeError):
-                    pass
-
-                index[path_str] = {
-                    "path":         path_str,
-                    "bpm":          bpm,
-                    "key":          key,
-                    "duration_sec": duration_sec,
-                }
-
-        log.info("DB index loaded: %d imported tracks", len(index))
-        return index
-
-    except Exception as exc:
-        log.warning("Could not load DB index (will use scan_index only): %s", exc)
-        return {}
-
-
-def _merge_indices(db_index: dict[str, dict], scan_index: dict[str, dict]) -> dict[str, dict]:
-    """
-    Merge DB index and scan index into a single pre-filter index.
-
-    Strategy:
-      - DB wins for bpm and key (authoritative — what Rekordbox has stored).
-      - scan_index fills in duration_sec where DB has none (audio_processor
-        measures actual audio duration; DB TotalTime may be 0 for some tracks).
-      - Files only in scan_index (not yet imported) are included as-is.
-    """
-    merged: dict[str, dict] = {}
-    for path in set(db_index) | set(scan_index):
-        db  = db_index.get(path, {})
-        si  = scan_index.get(path, {})
-        merged[path] = {
-            "path":         path,
-            "bpm":          db.get("bpm")          or si.get("bpm"),
-            "key":          db.get("key")          or si.get("key"),
-            "duration_sec": db.get("duration_sec") or si.get("duration_sec"),
-        }
-    return merged
 
 
 def _bpm_bucket(bpm_str: str | None) -> str | None:
@@ -520,141 +330,53 @@ class DuplicateGroup:
     recommended_keep: Path
     recommended_remove: list[Path]
     ranks: dict[str, str] = field(default_factory=dict)   # path str → rank label
+    keep_in_trash: bool = False  # True when the recommended_keep lives in a trash folder
+
+
+@dataclass
+class ScanResult:
+    """
+    Output of scan_duplicates().
+
+    groups          — duplicate groups (2+ files sharing a fingerprint).
+                      Safe to pass to write_csv_report().
+    unique_in_trash — files with no duplicate anywhere in the scan that
+                      live inside a trash or trash-adjacent folder.
+                      These are NOT in the CSV. They require manual rescue.
+                      SuperBox does not offer an automated step for these.
+    """
+    groups: list[DuplicateGroup]
+    unique_in_trash: list[Path]
 
 
 # ─── Fingerprinting ───────────────────────────────────────────────────────────
 
-def fingerprint_file(
-    path: Path,
-    offset: int = _FP_OFFSET_SEC,
-    length: int = _FP_LENGTH_SEC,
-) -> str | None:
+def fingerprint_file(path: Path) -> str | None:
     """
-    Compute the Chromaprint acoustic fingerprint for an audio file by calling
-    fpcalc directly as a subprocess.
+    Compute the Chromaprint acoustic fingerprint for an audio file.
+    Uses fpcalc via pyacoustid. Returns the fingerprint as a str, or None
+    on failure.
 
-    Parameters
-    ----------
-    path : Path
-        Audio file to fingerprint.
-    offset : int
-        Seconds to skip at the start of the file before analysis begins.
-        Default _FP_OFFSET_SEC (30 s) — skips DJ intros so the fingerprint
-        captures the harmonic body of the track, not the intro percussion.
-    length : int
-        Seconds of audio to analyse after the offset.
-        Default _FP_LENGTH_SEC (60 s) — enough for reliable Chromaprint matching.
+    pyacoustid may return the fingerprint as bytes in some versions — this
+    function always decodes to str so fp_map keys are consistent.
 
-    Returns
-    -------
-    str or None
-        Fingerprint string, or None on any failure.
+    fpcalc default: analyses first 120 seconds of audio — sufficient for DJ use.
     """
     try:
-        cmd = [_FPCALC, "-json", "-length", str(length)]
-        if offset > 0 and _FPCALC_OFFSET_OK:
-            cmd += ["-offset", str(offset)]
-        cmd.append(str(path))
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=90,
-            env=_FPCALC_ENV,
-        )
-        if result.returncode != 0:
-            log.error("fpcalc error for %s: %s", path.name, result.stderr.strip())
-            return None
-        data = json.loads(result.stdout)
-        fp = data.get("fingerprint")
-        if not fp:
+        duration, fingerprint = acoustid.fingerprint_file(str(path))
+        if not fingerprint:
             log.warning("Empty fingerprint for %s", path.name)
             return None
-        return fp
-    except subprocess.TimeoutExpired:
-        log.error("fpcalc timed out for %s", path.name)
-        return None
-    except FileNotFoundError:
-        log.error("fpcalc not found at %s — install with: brew install chromaprint", _FPCALC)
+        # Normalise to str — some pyacoustid versions return bytes
+        if isinstance(fingerprint, bytes):
+            fingerprint = fingerprint.decode("utf-8", errors="replace")
+        return fingerprint
+    except acoustid.FingerprintGenerationError as e:
+        log.error("Fingerprint failed for %s: %s", path.name, e)
         return None
     except Exception as e:
         log.error("Unexpected error fingerprinting %s: %s", path.name, e)
         return None
-
-
-# ─── Fingerprint cache ───────────────────────────────────────────────────────
-
-_FP_CACHE_PATH = Path.home() / "rekordbox-toolkit" / "fingerprint_cache.json"
-
-
-def _load_fp_cache() -> dict[str, dict]:
-    """
-    Load the persistent fingerprint cache from disk.
-    Returns a dict keyed by absolute file path string.
-    Each entry: {"path", "fingerprint", "mtime", "size"}.
-    Returns {} if the file is absent or unreadable.
-    """
-    if not _FP_CACHE_PATH.exists():
-        return {}
-    try:
-        with open(_FP_CACHE_PATH, encoding="utf-8") as f:
-            entries = json.load(f)
-        return {
-            e["path"]: e
-            for e in entries
-            if "path" in e and "fingerprint" in e
-        }
-    except Exception as exc:
-        log.warning("Could not load fingerprint cache: %s", exc)
-        return {}
-
-
-def _save_fp_cache(cache: dict[str, dict]) -> None:
-    """Write the fingerprint cache to disk, merging with any existing entries."""
-    _FP_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        # Load what's on disk first so we don't overwrite entries from a
-        # concurrent or previous run that aren't in the current cache dict.
-        existing: dict[str, dict] = {}
-        if _FP_CACHE_PATH.exists():
-            try:
-                with open(_FP_CACHE_PATH, encoding="utf-8") as f:
-                    for e in json.load(f):
-                        if "path" in e:
-                            existing[e["path"]] = e
-            except Exception:
-                pass
-        existing.update(cache)  # new entries win
-        with open(_FP_CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump(list(existing.values()), f)
-        log.info(
-            "Fingerprint cache saved: %d total entries (%d new this run)",
-            len(existing), len(cache),
-        )
-    except Exception as exc:
-        log.warning("Could not save fingerprint cache: %s", exc)
-
-
-def _fp_cache_valid(entry: dict, path: Path) -> bool:
-    """
-    Return True if the cache entry is still valid for this path.
-    Checks file mtime + size (file unchanged) and fp_offset + fp_length
-    (analysis window unchanged). Any mismatch forces a fresh fpcalc run.
-    """
-    if not entry:
-        return False
-    if entry.get("fp_offset") != _FP_OFFSET_SEC:
-        return False
-    if entry.get("fp_length") != _FP_LENGTH_SEC:
-        return False
-    try:
-        stat = path.stat()
-        return (
-            stat.st_mtime == entry.get("mtime")
-            and stat.st_size == entry.get("size")
-        )
-    except OSError:
-        return False
 
 
 # ─── Filesystem walk ──────────────────────────────────────────────────────────
@@ -715,75 +437,36 @@ def scan_duplicates(
     all_files = _walk_audio_files(root)
     log.info("Found %d audio files total", len(all_files))
 
-    # Load fingerprint cache early so we can report hits at prefilter time
-    fp_cache = _load_fp_cache()
-    log.info("Fingerprint cache: %d entries loaded", len(fp_cache))
-
-    # Build pre-filter index — DB covers all imported tracks; scan_index fills
-    # in files not yet imported and provides measured audio durations.
-    db_index   = _load_db_index()
-    scan_index = _load_scan_index()
-    index      = _merge_indices(db_index, scan_index)
-
+    # Apply pre-filter from scan index if available
+    index = _load_scan_index()
     if index:
         files = _candidate_pairs(all_files, index)
+        print(
+            f"SUPERBOX_PREFILTER: "
+            + json.dumps({
+                "total": len(all_files),
+                "candidates": len(files),
+                "skipped": len(all_files) - len(files),
+            }),
+            flush=True,
+        )
     else:
         files = all_files
-        log.info("No index available — fingerprinting all files (run Audit + Tag Tracks first to speed this up)")
+        log.info("No scan index found — fingerprinting all files (run Tag Tracks first to speed this up)")
 
     total = len(files)
-
-    # Count how many candidates already have a valid cached fingerprint
-    cache_hits_pre = sum(1 for p in files if _fp_cache_valid(fp_cache.get(str(p), {}), p))
-    cache_misses   = total - cache_hits_pre
-
-    print(
-        "SUPERBOX_PREFILTER: "
-        + json.dumps({
-            "total":        len(all_files),
-            "candidates":   total,
-            "skipped":      len(all_files) - total,
-            "db_tracks":    len(db_index),
-            "scan_tracks":  len(scan_index),
-            "cached":       cache_hits_pre,
-            "to_compute":   cache_misses,
-        }),
-        flush=True,
-    )
-
     log.info(
         "Beginning fingerprint pass on %d files "
-        "(workers=%d pause=%.1fs cached=%d to_compute=%d)",
-        total, max_workers, pause_seconds, cache_hits_pre, cache_misses,
+        "(workers=%d pause=%.1fs)",
+        total, max_workers, pause_seconds,
     )
 
     fp_map: dict[str, list[Path]] = {}
-    failed    = 0
+    failed = 0
     completed = 0
-    hits      = 0
-    # Collect new cache entries — list.append is GIL-safe for concurrent use
-    new_cache_entries: list[dict] = []
 
-    def _fingerprint_one(path: Path) -> tuple[Path, str | None, bool]:
-        """Return (path, fingerprint, was_cache_hit). Never raises."""
-        entry = fp_cache.get(str(path))
-        if entry and _fp_cache_valid(entry, path):
-            return path, entry["fingerprint"], True
-        fp = fingerprint_file(path)
-        if fp is not None:
-            try:
-                stat = path.stat()
-                new_cache_entries.append({
-                    "path":        str(path),
-                    "fingerprint": fp,
-                    "mtime":       stat.st_mtime,
-                    "size":        stat.st_size,
-                    "fp_offset":   _FP_OFFSET_SEC,
-                    "fp_length":   _FP_LENGTH_SEC,
-                })
-            except OSError:
-                pass
-        return path, fp, False
+    def _fingerprint_one(path: Path) -> tuple[Path, str | None]:
+        return path, fingerprint_file(path)
 
     if max_workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -791,7 +474,7 @@ def scan_duplicates(
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
                 try:
-                    path, fp, was_hit = future.result()
+                    path, fp = future.result()
                 except Exception as exc:
                     log.error("Unexpected fingerprint error: %s", exc)
                     failed += 1
@@ -800,115 +483,92 @@ def scan_duplicates(
                     failed += 1
                 else:
                     fp_map.setdefault(fp, []).append(path)
-                    if was_hit:
-                        hits += 1
                 if completed % _LOG_EVERY == 0:
                     log.info(
-                        "Fingerprinting: %d / %d  (cache hits: %d  failures: %d)",
-                        completed, total, hits, failed,
+                        "Fingerprinting: %d / %d  (failures: %d)",
+                        completed, total, failed,
                     )
     else:
         for i, path in enumerate(files):
             if i > 0 and i % _LOG_EVERY == 0:
                 log.info(
-                    "Fingerprinting: %d / %d  (cache hits: %d  failures so far: %d)",
-                    i, total, hits, failed,
+                    "Fingerprinting: %d / %d  (failures so far: %d)",
+                    i, total, failed,
                 )
-            path, fp, was_hit = _fingerprint_one(path)
+            fp = fingerprint_file(path)
             if fp is None:
                 failed += 1
             else:
                 fp_map.setdefault(fp, []).append(path)
-                if was_hit:
-                    hits += 1
             if pause_seconds > 0 and i < total - 1:
                 time.sleep(pause_seconds)
 
-    # Persist new fingerprints to cache
-    new_entries_map = {e["path"]: e for e in new_cache_entries}
-    if new_entries_map:
-        _save_fp_cache(new_entries_map)
-
     log.info(
-        "Fingerprint pass complete — %d cache hits, %d computed, %d failures, %d unique prints",
-        hits, len(new_entries_map), failed, len(fp_map),
+        "Fingerprint pass complete — %d unique prints, %d failures",
+        len(fp_map), failed,
     )
 
     groups: list[DuplicateGroup] = []
-    fp_rejected   = 0
-    ver_split_cnt = 0
+    unique_in_trash: list[Path] = []
 
     for fp, paths in fp_map.items():
         if len(paths) < 2:
+            # Single copy — if it's in trash, this is a rescue candidate
+            if _is_trash_adjacent(paths[0]):
+                unique_in_trash.append(paths[0])
             continue
 
-        # Filename gate — reject groups where no pair has similar names.
-        # Filters false positives caused by shared sample loops / breakdowns
-        # that produce identical fingerprints for genuinely different tracks.
-        has_similar_pair = any(
-            _filename_similarity(paths[i], paths[j]) >= _FILENAME_SIMILARITY_MIN
-            for i in range(len(paths))
-            for j in range(i + 1, len(paths))
-        )
-        if not has_similar_pair:
-            fp_rejected += 1
-            log.debug(
-                "Rejected fingerprint group (name mismatch): %s",
-                [p.name for p in paths],
-            )
-            continue
+        ranked = sorted(paths, key=_rank_file)
+        keep = ranked[0]
+        remove = ranked[1:]
+        ranks = {str(p): _RANK_LABELS[_rank_file(p)] for p in paths}
 
-        # Version-tag split — a fingerprint match can contain different
-        # *releases* of the same recording (e.g. "Club Mix" vs "Dub Mix"
-        # or "[Artist] Dub" vs another artist's dub). These share audio but
-        # are distinct products and should NOT be marked as duplicates.
-        # Split the group by version tag; files with the same tag (or both
-        # with no tag) remain as duplicates. Each sub-group is ranked and
-        # reported independently.
-        sub_groups = _split_group_by_version(paths)
-        if len(sub_groups) != 1 or len(sub_groups[0]) != len(paths):
-            ver_split_cnt += 1
-            log.debug(
-                "Version split (%d file(s) → %d sub-group(s)): %s",
-                len(paths),
-                len(sub_groups),
-                [p.name for p in paths],
-            )
-
-        for sub_paths in sub_groups:
-            ranked = sorted(sub_paths, key=_rank_file)
-            keep   = ranked[0]
-            remove = ranked[1:]
-            ranks  = {str(p): _RANK_LABELS[_rank_file(p)] for p in sub_paths}
-            groups.append(DuplicateGroup(
-                fingerprint=fp,
-                files=sub_paths,
-                recommended_keep=keep,
-                recommended_remove=remove,
-                ranks=ranks,
-            ))
+        groups.append(DuplicateGroup(
+            fingerprint=fp,
+            files=paths,
+            recommended_keep=keep,
+            recommended_remove=remove,
+            ranks=ranks,
+            keep_in_trash=_is_trash_adjacent(keep),
+        ))
 
     groups.sort(key=lambda g: len(g.files), reverse=True)
 
+    trapped_keep_count = sum(1 for g in groups if g.keep_in_trash)
+
     log.info(
-        "Duplicate scan complete — %d groups, %d duplicate files "
-        "(%d fingerprint groups rejected by name gate, %d split by version tag)",
+        "Duplicate scan complete — %d groups, %d duplicate files",
         len(groups),
         sum(len(g.recommended_remove) for g in groups),
-        fp_rejected,
-        ver_split_cnt,
     )
-    return groups
+    if unique_in_trash:
+        log.warning(
+            "RESCUE REQUIRED: %d unique tracks exist ONLY inside trash folders — "
+            "see rescue report. SuperBox will NOT include these in the pruning CSV.",
+            len(unique_in_trash),
+        )
+    if trapped_keep_count:
+        log.warning(
+            "RESCUE REQUIRED: %d duplicate groups have their best copy inside a "
+            "trash folder — these are marked keep_in_trash=True in the CSV.",
+            trapped_keep_count,
+        )
+
+    return ScanResult(groups=groups, unique_in_trash=unique_in_trash)
 
 
 # ─── CSV report ───────────────────────────────────────────────────────────────
 
 def write_csv_report(
-    groups: list[DuplicateGroup],
+    result: ScanResult,
     output_path: Path,
 ) -> None:
     """
     Write duplicate groups to a CSV file for human review.
+
+    Unique-in-trash files (result.unique_in_trash) are intentionally excluded
+    from this CSV. They appear only in the rescue report. The pruning tool must
+    never act on them.
 
     Columns:
         group_id        — integer, same for all files in a group
@@ -919,13 +579,16 @@ def write_csv_report(
         bpm             — from TBPM tag, or blank
         key             — from TKEY tag, or blank
         filename        — basename only (for quick scanning)
+        keep_in_trash   — "YES" when this group's KEEP copy is inside a trash
+                          folder (applies to all rows in that group). These
+                          tracks need manual rescue before the trash is cleared.
 
     BPM and key are read live from file tags, not from the database. This
     means the report is valid before import and reflects raw tag values.
 
     Parameters
     ----------
-    groups : list[DuplicateGroup]
+    result : ScanResult
         Output of scan_duplicates().
     output_path : Path
         Where to write the CSV. Parent directory is created if absent.
@@ -936,11 +599,11 @@ def write_csv_report(
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=[
             "group_id", "action", "rank", "file_path",
-            "file_size_mb", "bpm", "key", "filename",
+            "file_size_mb", "bpm", "key", "filename", "keep_in_trash",
         ])
         writer.writeheader()
 
-        for group_id, group in enumerate(groups, start=1):
+        for group_id, group in enumerate(result.groups, start=1):
             for path in group.files:
                 action = "KEEP" if path == group.recommended_keep else "REVIEW_REMOVE"
                 rank = group.ranks.get(str(path), "RAW")
@@ -973,12 +636,117 @@ def write_csv_report(
                     "bpm": bpm_str,
                     "key": key_str,
                     "filename": path.name,
+                    "keep_in_trash": "YES" if group.keep_in_trash else "",
                 })
                 rows_written += 1
 
     log.info(
         "CSV report written: %s (%d rows, %d groups)",
-        output_path, rows_written, len(groups),
+        output_path, rows_written, len(result.groups),
+    )
+
+
+# ─── Trash rescue report ─────────────────────────────────────────────────────
+
+def write_trash_rescue_report(
+    result: ScanResult,
+    output_path: Path,
+) -> None:
+    """
+    Write a plain-text rescue report for tracks that need manual intervention
+    before any trash folder is cleared.
+
+    Two categories are reported:
+
+      SECTION 1 — Unique tracks in trash (result.unique_in_trash):
+        These files have NO duplicate anywhere in the scan. Their only known
+        copy is inside a trash or trash-adjacent folder. SuperBox does not
+        offer an automated rescue step for these. The user must manually move
+        them to a safe location. They are NOT in the pruning CSV.
+
+      SECTION 2 — Trapped KEEP copies (groups where keep_in_trash=True):
+        These are duplicate groups where the best surviving copy happens to
+        live inside a trash folder (all better copies were already deleted or
+        never existed elsewhere). The pruner will not delete them (they are
+        marked KEEP), but if the trash folder is manually cleared they will
+        be lost. Move them to a safe location before clearing any trash.
+
+    Parameters
+    ----------
+    result : ScanResult
+        Output of scan_duplicates().
+    output_path : Path
+        Where to write the report. Parent directory is created if absent.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    trapped_keeps = [g for g in result.groups if g.keep_in_trash]
+    unique_count = len(result.unique_in_trash)
+    trapped_count = len(trapped_keeps)
+    total_at_risk = unique_count + trapped_count
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        w = f.write
+
+        w("╔══════════════════════════════════════════════════════════════════════╗\n")
+        w("║          !!!  SUPERBOX TRASH RESCUE REPORT  !!!                     ║\n")
+        w("║                                                                      ║\n")
+        w("║  STOP. READ THIS BEFORE DELETING ANYTHING.                          ║\n")
+        w("║                                                                      ║\n")
+        w("║  The tracks in this report exist ONLY inside trash or trash-         ║\n")
+        w("║  adjacent folders. If you clear those folders, these tracks are      ║\n")
+        w("║  PERMANENTLY GONE. SuperBox does not offer an automated rescue       ║\n")
+        w("║  step — you must move these files manually before proceeding.        ║\n")
+        w("╚══════════════════════════════════════════════════════════════════════╝\n")
+        w(f"\n  Generated : {now}\n")
+        w(f"  Unique tracks with NO copy outside trash     : {unique_count}\n")
+        w(f"  Duplicate groups whose best copy is in trash : {trapped_count}\n")
+        w(f"  Total tracks at risk                         : {total_at_risk}\n")
+        w("\n")
+
+        # ── Section 1: Truly unique tracks in trash ───────────────────────────
+        w("━" * 72 + "\n")
+        w("  SECTION 1 OF 2 — UNIQUE TRACKS (no copy exists outside trash)\n")
+        w("━" * 72 + "\n")
+        w("\n")
+        if not result.unique_in_trash:
+            w("  None found.\n")
+        else:
+            w(f"  {unique_count} tracks have their ONLY known copy in a trash folder.\n")
+            w("  These are NOT in the pruning CSV. SuperBox will never touch them.\n")
+            w("  You must move them to a safe location manually.\n")
+            w("\n")
+            for path in sorted(result.unique_in_trash, key=lambda p: p.name.lower()):
+                w(f"  {path}\n")
+        w("\n")
+
+        # ── Section 2: Trapped KEEP copies ────────────────────────────────────
+        w("━" * 72 + "\n")
+        w("  SECTION 2 OF 2 — TRAPPED KEEPS (best copy is in trash)\n")
+        w("━" * 72 + "\n")
+        w("\n")
+        if not trapped_keeps:
+            w("  None found.\n")
+        else:
+            w(f"  {trapped_count} duplicate groups have their recommended KEEP inside a trash\n")
+            w("  folder. The pruner will NOT delete them, but clearing trash manually\n")
+            w("  would lose them. Move the KEEP file to a safe location first.\n")
+            w("\n")
+            for group in sorted(trapped_keeps, key=lambda g: g.recommended_keep.name.lower()):
+                w(f"  KEEP  → {group.recommended_keep}\n")
+                for rem in group.recommended_remove:
+                    w(f"  DUPE  → {rem}\n")
+                w("\n")
+
+        w("━" * 72 + "\n")
+        w("  END OF REPORT\n")
+        w("━" * 72 + "\n")
+
+    log.warning(
+        "Trash rescue report written: %s  (%d unique-in-trash, %d trapped keeps)",
+        output_path, unique_count, trapped_count,
     )
 
 
@@ -1011,18 +779,22 @@ if __name__ == "__main__":
     print("\n=== Duplicate scan (Kerri Chandler only) ===")
     test_root = MUSIC_ROOT / "Kerri Chandler"
     if test_root.exists():
-        groups = scan_duplicates(test_root)
-        print(f"  Duplicate groups found: {len(groups)}")
-        for g in groups[:3]:
-            print(f"\n  Group ({len(g.files)} files):")
+        result = scan_duplicates(test_root)
+        print(f"  Duplicate groups found  : {len(result.groups)}")
+        print(f"  Unique-in-trash         : {len(result.unique_in_trash)}")
+        for g in result.groups[:3]:
+            print(f"\n  Group ({len(g.files)} files) keep_in_trash={g.keep_in_trash}:")
             for p in g.files:
                 action = "KEEP  " if p == g.recommended_keep else "REMOVE"
                 print(f"    [{action}] [{g.ranks[str(p)]}] {p.name}")
 
-        if groups:
+        if result.groups or result.unique_in_trash:
             out = Path.home() / "rekordbox-toolkit" / "duplicate_report_test.csv"
-            write_csv_report(groups, out)
-            print(f"\n  CSV written to: {out}")
+            rescue_out = Path.home() / "rekordbox-toolkit" / "trash_rescue_report_test.txt"
+            write_csv_report(result, out)
+            write_trash_rescue_report(result, rescue_out)
+            print(f"\n  CSV written to    : {out}")
+            print(f"  Rescue report to  : {rescue_out}")
     else:
         print(f"  SKIP: {test_root} not found")
 

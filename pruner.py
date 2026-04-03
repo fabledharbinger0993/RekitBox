@@ -11,7 +11,16 @@ and executes confirmed prune operations:
 
 Called from app.py. Never called directly by the user.
 
+Trash rescue gate:
+  Before any prune can execute, trash_rescue_preflight(csv_path) must be
+  called and return an empty issues list. If the companion rescue report
+  has unresolved items, or the CSV contains keep_in_trash=YES rows, the
+  preflight raises TrashRescueRequired. The prune will not proceed until
+  the user has reviewed and cleared those items. SuperBox does not offer
+  an automated rescue step — the user must act manually.
+
 Public interface:
+  trash_rescue_preflight(csv_path) -> None   (raises TrashRescueRequired)
   load_report(csv_path, db=None) -> list[DupeGroup]
   prune_files(file_paths, db, log=None) -> dict
 """
@@ -22,6 +31,110 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# ── Trash rescue gate ────────────────────────────────────────────────────────
+
+class TrashRescueRequired(RuntimeError):
+    """
+    Raised by trash_rescue_preflight() when unresolved rescue items are found.
+    The prune must not proceed until the user has acted on the rescue report.
+    """
+    def __init__(self, message: str, issues: list[str]):
+        super().__init__(message)
+        self.issues = issues
+
+
+def trash_rescue_preflight(csv_path: Path) -> None:
+    """
+    Check whether it is safe to proceed with a prune run against csv_path.
+
+    Raises TrashRescueRequired if either:
+      1. A companion rescue report (.txt, same stem prefix) exists and
+         contains file paths — meaning unique-in-trash tracks were found
+         during the last scan and have not been cleared.
+      2. The CSV itself contains rows with keep_in_trash=YES — meaning at
+         least one duplicate group's best surviving copy is inside a trash
+         folder. Pruning the REVIEW_REMOVE copies for that group while the
+         KEEP is still in trash would leave no safe copy anywhere.
+
+    SuperBox does not offer an automated rescue step. The user must manually
+    move the flagged files before the prune can run.
+
+    Parameters
+    ----------
+    csv_path : Path
+        Path to the duplicate_report CSV that will be fed to load_report().
+    """
+    issues: list[str] = []
+
+    # ── Check 1: companion rescue report ─────────────────────────────────────
+    # The rescue report is written alongside the CSV with a parallel name:
+    #   duplicate_report_20260403_013019.csv
+    #   trash_rescue_report_20260403_013019.txt
+    stem = csv_path.stem
+    rescue_stem = stem.replace("duplicate_report", "trash_rescue_report")
+    if rescue_stem == stem:
+        rescue_stem = f"trash_rescue_{stem}"
+    rescue_path = csv_path.with_name(rescue_stem).with_suffix(".txt")
+
+    if rescue_path.exists():
+        # Scan the rescue report for actual file paths (lines starting with /)
+        with open(rescue_path, encoding="utf-8", errors="replace") as f:
+            rescue_paths = [
+                ln.strip() for ln in f
+                if ln.strip().startswith("/") or ln.strip().startswith("\\")
+            ]
+        if rescue_paths:
+            issues.append(
+                f"Rescue report lists {len(rescue_paths)} track(s) that need manual "
+                f"attention before pruning: {rescue_path}"
+            )
+
+    # ── Check 2: keep_in_trash rows in the CSV ────────────────────────────────
+    try:
+        with open(csv_path, newline="", encoding="utf-8", errors="replace") as f:
+            reader = csv.DictReader(f)
+            if "keep_in_trash" in (reader.fieldnames or []):
+                trapped = [
+                    row["file_path"]
+                    for row in reader
+                    if row.get("keep_in_trash", "").strip().upper() == "YES"
+                    and row.get("action", "").strip() == "KEEP"
+                ]
+                if trapped:
+                    issues.append(
+                        f"{len(trapped)} group(s) have their best copy inside a trash folder "
+                        f"(keep_in_trash=YES). Move those files to a safe location before pruning."
+                    )
+    except Exception:
+        pass  # If the CSV can't be read here, load_report will surface the error
+
+    if issues:
+        lines = [
+            "╔══════════════════════════════════════════════════════════════════╗",
+            "║  !!! PRUNE BLOCKED — TRASH RESCUE REQUIRED !!!                  ║",
+            "║                                                                  ║",
+            "║  Unique or possibly-unique tracks were found inside trash or     ║",
+            "║  trash-adjacent folders. SuperBox does not offer an automated   ║",
+            "║  rescue step. You must review and act on these manually before  ║",
+            "║  any pruning can proceed.                                        ║",
+            "╠══════════════════════════════════════════════════════════════════╣",
+        ]
+        for issue in issues:
+            # Word-wrap each issue to ~66 chars
+            words = issue.split()
+            line = ""
+            for word in words:
+                if len(line) + len(word) + 1 > 64:
+                    lines.append(f"║  {line:<66}║")
+                    line = word
+                else:
+                    line = (line + " " + word).strip()
+            if line:
+                lines.append(f"║  {line:<66}║")
+        lines.append("╚══════════════════════════════════════════════════════════════════╝")
+        raise TrashRescueRequired("\n".join(lines), issues)
+
 
 # ── Quality ranking ───────────────────────────────────────────────────────────
 # Higher tier = higher quality. Used to re-rank within each duplicate group.
@@ -72,8 +185,9 @@ class DupeEntry:
 
 @dataclass
 class DupeGroup:
-    group_id: str
-    entries:  list[DupeEntry] = field(default_factory=list)
+    group_id:     str
+    entries:      list[DupeEntry] = field(default_factory=list)
+    keep_in_trash: bool = False  # True when the KEEP file lives in a trash folder
 
     @property
     def keep(self) -> Optional[DupeEntry]:
@@ -81,6 +195,12 @@ class DupeGroup:
 
     @property
     def remove_candidates(self) -> list[DupeEntry]:
+        # Safety lock: if the best surviving copy is in a trash folder, pruning
+        # the REVIEW_REMOVE files would leave no safe copy once trash is cleared.
+        # Return nothing so the pruner can never act on this group regardless of
+        # how it was called or whether preflight was skipped.
+        if self.keep_in_trash:
+            return []
         return [e for e in self.entries if e.action == "REVIEW_REMOVE"]
 
 
@@ -98,11 +218,15 @@ def load_report(csv_path: Path, db=None) -> list[DupeGroup]:
     db_paths: set[str] = set()
     if db is not None:
         try:
-            db_paths = {row.FolderPath for row in db.get_content().all()}
+            db_paths = {row.FolderPath for row in db.get_content()}
         except Exception:
             pass  # DB unavailable — just skip in_db flagging
 
     groups: dict[str, DupeGroup] = {}
+
+    # Track which group IDs are flagged keep_in_trash from the CSV column.
+    # Collected separately so we can set it after all entries are loaded.
+    trash_flagged_groups: set[str] = set()
 
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -131,11 +255,17 @@ def load_report(csv_path: Path, db=None) -> list[DupeGroup]:
                 groups[gid] = DupeGroup(gid)
             groups[gid].entries.append(entry)
 
+            if row.get("keep_in_trash", "").strip().upper() == "YES":
+                trash_flagged_groups.add(gid)
+
     # Re-rank: sort each group by quality descending, reassign KEEP to #1
     for group in groups.values():
         group.entries.sort(key=lambda e: e.quality_score, reverse=True)
         for i, entry in enumerate(group.entries):
             entry.action = "KEEP" if i == 0 else "REVIEW_REMOVE"
+        # Apply trash lock — locked regardless of re-ranking outcome
+        if group.group_id in trash_flagged_groups:
+            group.keep_in_trash = True
 
     # Drop groups with only one entry (nothing to prune)
     return [g for g in groups.values() if len(g.entries) > 1]
@@ -147,25 +277,18 @@ def prune_files(
     file_paths: list[str],
     db,
     log=None,
-    *,
-    permanent: bool = False,
 ) -> dict:
     """
-    Remove file_paths from DjmdContent and either move them to a timestamped
-    recovery folder in ~/Trash (default) or permanently delete them in place.
-
-    permanent=True skips the Trash entirely and calls unlink() directly.
-    Use this when the source drive is full and there is no room to copy files
-    to the Mac before deleting them (e.g. a full NTFS backup drive).
+    Remove file_paths from DjmdContent and move them to a timestamped
+    recovery folder inside ~/Trash/.
 
     Order of operations:
-      1. Create recovery folder in Trash (skipped when permanent=True).
+      1. Create recovery folder in Trash.
       2. Remove DB entries (with the backup already created by write_db).
-      3. Move or delete files.
-      4. Delete any source folders that are now empty.
+      3. Move files to recovery folder.
 
     Returns a summary dict:
-      { db_removed, files_moved, folders_removed, skipped, errors, trash_dir }
+      { db_removed, files_moved, skipped, errors, trash_dir }
     """
 
     def emit(msg: str) -> None:
@@ -173,13 +296,9 @@ def prune_files(
             log(msg)
 
     stamp     = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if permanent:
-        trash_dir = None
-        emit("Mode: permanent delete (files will NOT be recoverable)")
-    else:
-        trash_dir = Path.home() / ".Trash" / f"SuperBox_Pruned_{stamp}"
-        trash_dir.mkdir(parents=True, exist_ok=True)
-        emit(f"Recovery folder → {trash_dir}")
+    trash_dir = Path.home() / ".Trash" / f"SuperBox_Pruned_{stamp}"
+    trash_dir.mkdir(parents=True, exist_ok=True)
+    emit(f"Recovery folder → {trash_dir}")
     emit("")
 
     db_removed = 0
@@ -191,12 +310,10 @@ def prune_files(
     emit("  Removing from RekordBox database…")
     for path in file_paths:
         try:
-            # Materialise the query (.all()) so we iterate over row objects,
-            # not a SQLAlchemy Query object (which is always truthy even when empty).
-            rows = db.get_content(FolderPath=path).all()
+            rows = db.get_content(FolderPath=path)
             if rows:
                 for row in rows:
-                    db.delete(row)
+                    db.session.delete(row)
                 db_removed += 1
                 emit(f"    DB ✓  {Path(path).name}")
             else:
@@ -206,34 +323,10 @@ def prune_files(
             errors.append(msg)
             emit(f"    DB ✗  {msg}")
 
-    # Commit using pyrekordbox's db.commit() — consistent with all other modules,
-    # handles USN auto-increment and masterPlaylists6.xml sync.
-    if db_removed > 0:
-        try:
-            db.commit()
-            emit(f"  ✓ {db_removed} database entries committed.")
-        except Exception as exc:
-            msg = f"DB commit failed — files will NOT be moved: {exc}"
-            errors.append(msg)
-            emit(f"  ✗ {msg}")
-            emit("")
-            emit("═══ PRUNE SUMMARY ═══")
-            emit("  Database commit error — operation aborted, no files moved.")
-            emit(f"  {msg}")
-            emit("═════════════════════")
-            return {
-                "db_removed":  0,
-                "files_moved": 0,
-                "skipped":     0,
-                "errors":      errors,
-                "trash_dir":   str(trash_dir),
-            }
-
     emit("")
 
-    # ── Step 2: Move or delete files ──────────────────────────────────────
-    emit("  Deleting files…" if permanent else "  Moving files to recovery folder…")
-    source_parents: set[Path] = set()
+    # ── Step 2: Move files to recovery folder ──────────────────────────────
+    emit("  Moving files to recovery folder…")
     for path in file_paths:
         p = Path(path)
         if not p.exists():
@@ -241,76 +334,35 @@ def prune_files(
             skipped += 1
             continue
         try:
-            if permanent:
-                p.unlink()
-            else:
-                dest = trash_dir / p.name
-                # Handle name collisions within the recovery folder
-                if dest.exists():
-                    dest = trash_dir / f"{p.stem}__{p.parent.name}{p.suffix}"
-                shutil.move(str(p), str(dest))
-            source_parents.add(p.parent)
+            dest = trash_dir / p.name
+            # Handle name collisions within the recovery folder
+            if dest.exists():
+                dest = trash_dir / f"{p.stem}__{p.parent.name}{p.suffix}"
+            shutil.move(str(p), str(dest))
             files_moved += 1
-            emit(f"    {'Deleted' if permanent else 'Moved'} ✓  {p.name}")
+            emit(f"    Moved ✓  {p.name}")
         except Exception as exc:
-            msg = f"Could not {'delete' if permanent else 'move'} {p.name}: {exc}"
+            msg = f"Could not move {p.name}: {exc}"
             errors.append(msg)
-            emit(f"    {'Delete' if permanent else 'Move'} ✗  {msg}")
+            emit(f"    Move ✗  {msg}")
 
     emit("")
-
-    # ── Step 3: Remove empty source folders ───────────────────────────────
-    folders_removed = 0
-    if source_parents:
-        emit("  Cleaning up empty source folders…")
-        home = Path.home()
-        # Process deepest paths first so we bubble upward correctly
-        for parent in sorted(source_parents, key=lambda p: len(p.parts), reverse=True):
-            folder = parent
-            while folder != home and folder.is_relative_to(home):
-                if not folder.exists():
-                    folder = folder.parent
-                    continue
-                try:
-                    contents = list(folder.iterdir())
-                except PermissionError:
-                    break
-                if contents:
-                    break  # not empty — stop climbing
-                try:
-                    folder.rmdir()
-                    folders_removed += 1
-                    emit(f"    Removed ✓  {folder.name}/  ({folder.parent})")
-                    folder = folder.parent
-                except Exception as exc:
-                    emit(f"    Could not remove {folder.name}/: {exc}")
-                    break
-        if folders_removed:
-            emit(f"  ✓ {folders_removed} empty folder(s) removed.")
-        else:
-            emit("  No empty folders to clean up.")
-        emit("")
-
     emit("═══ PRUNE SUMMARY ═══")
     emit(f"  Database entries removed : {db_removed}")
-    emit(f"  Files {'permanently deleted' if permanent else 'moved to recovery'} : {files_moved}")
-    if folders_removed:
-        emit(f"  Empty folders removed    : {folders_removed}")
+    emit(f"  Files moved to recovery  : {files_moved}")
     if skipped:
         emit(f"  Skipped (not on disk)    : {skipped}")
     if errors:
         emit(f"  Errors                   : {len(errors)}")
         for err in errors:
             emit(f"    ⚠  {err}")
-    if trash_dir:
-        emit(f"  Recovery folder          : {trash_dir}")
+    emit(f"  Recovery folder          : {trash_dir}")
     emit("═════════════════════")
 
     return {
-        "db_removed":      db_removed,
-        "files_moved":     files_moved,
-        "folders_removed": folders_removed,
-        "skipped":         skipped,
-        "errors":          errors,
-        "trash_dir":       str(trash_dir),
+        "db_removed":  db_removed,
+        "files_moved": files_moved,
+        "skipped":     skipped,
+        "errors":      errors,
+        "trash_dir":   str(trash_dir),
     }
