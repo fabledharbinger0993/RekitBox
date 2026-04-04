@@ -209,6 +209,23 @@ main { max-width: 1080px; margin: 0 auto; padding: 32px 28px; }
   background: var(--surface);
   margin-bottom: 16px;
   overflow: hidden;
+  position: relative;   /* anchors ::before watermark */
+}
+/* Tool-icon watermark — each card sets --card-watermark via inline style */
+.card::before {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  right: -12px;
+  width: 160px;
+  height: 160px;
+  background-image: var(--card-watermark, none);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: bottom right;
+  opacity: 0.045;
+  pointer-events: none;
+  z-index: 0;
 }
 .card-head {
   display: flex; align-items: flex-start; gap: 16px;
@@ -877,6 +894,30 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 }
 .owl-icon { font-size: 1.1rem; line-height: 1; }
 
+/* ── Modal background watermark ─────────────────────────────────────────── */
+/* Shared ::before rule drops the SRB cube at 4% opacity, bottom-right corner,
+   matching the body::before watermark on the main page. */
+#settings-modal,
+#report-modal,
+#welcome-modal {
+  position: relative;
+  overflow: hidden;
+}
+#settings-modal::before,
+#report-modal::before,
+#welcome-modal::before {
+  content: '';
+  position: absolute;
+  bottom: -20px;
+  right: -20px;
+  width: 220px;
+  height: 220px;
+  background: url('/static/SRB_LOGO.png') center / contain no-repeat;
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* ── Settings modal ─────────────────────────────────────────────────────── */
 #settings-backdrop {
   position: fixed; inset: 0; z-index: 10000;
@@ -918,16 +959,18 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 .settings-header {
   padding: 22px 28px 18px;
   border-bottom: 1px solid var(--border);
-  display: flex; 
-  align-items: center; 
+  display: flex;
+  align-items: center;
+  gap: 12px;
   justify-content: space-between;
   flex-shrink: 0;
 }
+.settings-header > h2 { flex: 1; min-width: 0; }
 
-.settings-header h2 { 
-  font-size: 1.05rem; 
-  font-weight: 700; 
-  margin: 0; 
+.settings-header h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
 }
 
 .settings-close {
@@ -1387,8 +1430,9 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + var(--s
   position: sticky; top: 0;
   background: var(--surface);
   z-index: 1;
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
 }
+.rmod-header > .rmod-header-text { flex: 1; min-width: 0; }
 .rmod-header-text h2 {
   font-size: 1.1rem; font-weight: 700; color: var(--text); margin: 0 0 6px;
 }
@@ -1529,3 +1573,40 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + var(--s
   transition: background .15s, border-color .15s, color .15s;
 }
 #settings-btn:hover { background: var(--surface-hi); border-color: var(--accent); color: var(--accent); }
+
+/* ── Drag-and-drop path drop zones ──────────────────────────────────────── */
+.drop-wrap {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.drop-wrap input {
+  flex: 1;
+  min-width: 0;
+}
+.drop-badge {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: .6rem;
+  color: var(--text-dim);
+  pointer-events: none;
+  letter-spacing: .07em;
+  user-select: none;
+  opacity: 0.5;
+  font-family: var(--mono);
+  transition: opacity .15s;
+}
+.drop-wrap input.drop-active {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-dim);
+  background: rgba(99, 102, 241, .07) !important;
+}
+.drop-wrap input.drop-active ~ .drop-badge { opacity: 0; }
+@keyframes drop-flash {
+  0%   { background: rgba(52, 211, 153, .22); border-color: var(--safe) !important; }
+  100% { background: var(--surface); border-color: var(--border); }
+}
+.drop-wrap input.drop-filled { animation: drop-flash .55s ease forwards; }
