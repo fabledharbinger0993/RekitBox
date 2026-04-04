@@ -100,7 +100,7 @@
   <p class="section-title">Core Pipeline — each tool feeds the next</p>
 
     <!-- ── Step 1: Audit ──────────────────────────────────────────────────── -->
-  <div class="card" id="step-audit">
+  <div class="card" id="step-audit" style="--card-watermark:url('/static/icon-audit.png')">
     <div class="card-head">
       <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Audit"></div>
       <div class="card-meta">
@@ -162,7 +162,7 @@
 
 
     <!-- ── Step 2: Process (tags only) ────────────────────────────────────── -->
-  <div class="card" id="step-process">
+  <div class="card" id="step-process" style="--card-watermark:url('/static/icon-tag.png')">
     <div class="card-head">
       <div class="card-icon caution"><img src="/static/icon-tag.png" alt="Tag Tracks"></div>
       <div class="card-meta">
@@ -226,7 +226,7 @@
 
 
     <!-- Duplicate detector -->
-  <div class="card" id="step-duplicates">
+  <div class="card" id="step-duplicates" style="--card-watermark:url('/static/icon-find-duplicate.png')">
     <div class="card-head">
       <div class="card-icon safe"><img src="/static/icon-find-duplicate.png" alt="Find Duplicates"></div>
       <div class="card-meta">
@@ -287,7 +287,7 @@
 
 
     <!-- ── Prune Duplicates ──────────────────────────────────────────────── -->
-  <div class="card" id="step-prune">
+  <div class="card" id="step-prune" style="--card-watermark:url('/static/icon-prune.png')">
     <div class="card-head">
       <div class="card-icon danger"><img src="/static/icon-prune.png" alt="Prune"></div>
       <div class="card-meta">
@@ -402,6 +402,7 @@
   <!-- Step 1 — bottom-right. "What you're doing." Proceed button bottom-right. -->
   <div class="confirm-panel" id="confirm-step1">
     <div class="confirm-panel-head">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="confirm-step-num">1</div>
       <div class="confirm-panel-title">Confirm Selection</div>
       <button class="confirm-panel-cancel" onclick="cancelPrune()">✕ Cancel</button>
@@ -419,6 +420,7 @@
   <!-- Step 2 — top-left. File list + execute. -->
   <div class="confirm-panel" id="confirm-step2">
     <div class="confirm-panel-head">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="confirm-step-num">2</div>
       <div class="confirm-panel-title">Review &amp; Execute</div>
       <button class="confirm-panel-cancel" onclick="cancelPrune()">✕ Cancel</button>
@@ -439,7 +441,7 @@
 
 
     <!-- Relocate -->
-  <div class="card" id="step-relocate">
+  <div class="card" id="step-relocate" style="--card-watermark:url('/static/icon-move.png')">
     <div class="card-head">
       <div class="card-icon warn"><img src="/static/icon-move.png" alt="Relocate"></div>
       <div class="card-meta">
@@ -493,7 +495,7 @@
 
 
     <!-- ── Step 3: Import (with built-in preview) ────────────────────────── -->
-  <div class="card" id="step-import">
+  <div class="card" id="step-import" style="--card-watermark:url('/static/icon-import.png')">
     <div class="card-head">
       <div class="card-icon warn"><img src="/static/icon-import.png" alt="Import"></div>
       <div class="card-meta">
@@ -557,7 +559,7 @@
 
 
     <!-- ── Step 4: Link playlists ──────────────────────────────────────────── -->
-  <div class="card" id="step-link">
+  <div class="card" id="step-link" style="--card-watermark:url('/static/icon-link.png')">
     <div class="card-head">
       <div class="card-icon warn"><img src="/static/icon-link.png" alt="Link Playlists"></div>
       <div class="card-meta">
@@ -607,7 +609,7 @@
   <p class="section-title" style="margin-top:48px">Optional &amp; Transformative — run after the core pipeline is clean</p>
 
     <!-- ── Step 5: Normalize ───────────────────────────────────────────────── -->
-  <div class="card" id="step-normalize">
+  <div class="card" id="step-normalize" style="--card-watermark:url('/static/icon-normalize.png')">
     <div class="card-head">
       <div class="card-icon danger"><img src="/static/icon-normalize.png" alt="Normalize"></div>
       <div class="card-meta">
@@ -667,7 +669,7 @@
   </div>
 
 
-  <div class="card" id="step-convert">
+  <div class="card" id="step-convert" style="--card-watermark:url('/static/icon-convert.png')">
     <div class="card-head">
       <div class="card-icon"><img src="/static/icon-convert.png" alt="Convert"></div>
       <div class="card-meta">
@@ -739,7 +741,7 @@
 
 
     <!-- ── Organize Library ──────────────────────────────────────────────── -->
-  <div class="card" id="step-organize">
+  <div class="card" id="step-organize" style="--card-watermark:url('/static/icon-organizer.png')">
     <div class="card-head">
       <div class="card-icon"><img src="/static/icon-organizer.png" alt="Organize"></div>
       <div class="card-meta">
@@ -849,7 +851,7 @@
   <p class="section-title" style="margin-top:48px">Cross-Library Rescue — find unique tracks on other drives</p>
 
     <!-- ── Novelty Scanner ───────────────────────────────────────────────── -->
-  <div class="card" id="step-novelty">
+  <div class="card" id="step-novelty" style="--card-watermark:url('/static/icon-novelty.png')">
     <div class="card-head">
       <div class="card-icon"><img src="/static/icon-novelty.png" alt="Novelty Scanner"></div>
       <div class="card-meta">
@@ -909,7 +911,7 @@
   <p class="section-title" style="margin-top:48px">Pipeline Builder — chain any combination of steps</p>
 
     <!-- ── Pipeline Builder ──────────────────────────────────────────────── -->
-  <div class="card" id="step-pipeline" style="max-width:100%">
+  <div class="card" id="step-pipeline" style="--card-watermark:url('/static/SRB_LOGO.png');max-width:100%">
     <div class="card-head">
       <div class="card-icon" style="background:var(--accent-dim)"><span style="font-size:1.3rem">▶</span></div>
       <div class="card-meta">
@@ -1044,20 +1046,35 @@
 
         <!-- ── Step confirmation gate (shown between pipeline steps) ───────── -->
         <div id="pipe-confirm-gate" style="display:none;margin-top:16px;padding:14px 16px;
-             background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.35);
-             border-radius:8px;font-size:.86rem;">
+             border-radius:8px;font-size:.86rem;border:1px solid var(--pipe-gate-border, rgba(251,191,36,.35));
+             background:var(--pipe-gate-bg, rgba(251,191,36,.06));">
           <div style="display:flex;align-items:flex-start;gap:12px;">
-            <span style="font-size:1.3rem;line-height:1">⏸</span>
+            <span id="pipe-gate-icon" style="font-size:1.3rem;line-height:1">✓</span>
             <div style="flex:1">
               <div id="pipe-gate-title" style="font-weight:600;color:var(--text);margin-bottom:4px">Step complete</div>
               <div id="pipe-gate-body" style="color:var(--text-muted);line-height:1.5;font-size:.82rem;margin-bottom:12px"></div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                <button class="btn btn-neon" id="pipe-gate-continue" onclick="pipeConfirmContinue()" style="padding:7px 20px">
-                  Continue → <span id="pipe-gate-next-name"></span>
+                <!-- Success buttons -->
+                <button class="btn btn-neon" id="pipe-btn-finish" onclick="pipeGateAction('finish')"
+                        style="padding:7px 22px;display:none">
+                  Finish
                 </button>
-                <button class="btn" onclick="pipeConfirmStop()" style="color:var(--danger);border-color:var(--danger);padding:7px 16px">
-                  Stop here
+                <!-- Failure buttons -->
+                <button class="btn btn-neon" id="pipe-btn-redo" onclick="pipeGateAction('redo')"
+                        style="padding:7px 18px;display:none">
+                  Re-do
                 </button>
+                <button class="btn" id="pipe-btn-skip" onclick="pipeGateAction('skip')"
+                        style="padding:7px 18px;display:none;border-color:var(--caution);color:var(--caution)">
+                  Skip
+                </button>
+                <!-- Always shown -->
+                <button class="btn" onclick="pipeGateAction('stop')"
+                        style="color:var(--danger);border-color:var(--danger);padding:7px 16px">
+                  Stop
+                </button>
+                <span id="pipe-gate-next-label"
+                      style="font-size:.78rem;color:var(--text-dim);margin-left:4px"></span>
               </div>
             </div>
           </div>
@@ -1081,6 +1098,7 @@
 <div id="report-modal-backdrop" class="hidden">
   <div id="report-modal">
     <div class="rmod-header">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="rmod-header-text">
         <h2 id="rmod-title">Step Complete</h2>
         <p class="rmod-save-path" id="rmod-save-path"></p>
@@ -1142,6 +1160,7 @@
     
     <!-- Header -->
     <div class="settings-header">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <h2>⚙ Archive &amp; Log Settings</h2>
       <button class="settings-close" onclick="closeSettings()">✕</button>
     </div>
@@ -1249,6 +1268,7 @@
 <div id="welcome-backdrop" class="hidden">
   <div id="welcome-modal">
     <div class="welcome-header">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="welcome-header-text">
         <h2>Welcome to SuperBox</h2>
         <p>A free, open-source rekordbox library toolkit by Guthrie Entertainment LLC</p>
@@ -2303,34 +2323,57 @@ function _pipelineReadConfig(type, extraCsv) {
 }
 
 /* ── Pipeline confirm-gate state ──────────────────────────────────────────── */
-let _pipeConfirmResolve = null;   // set when gate is open; call(true) = continue, (false) = stop
+let _pipeGateResolve = null;   // resolves with action string: 'finish' | 'redo' | 'skip' | 'stop'
 
-function pipeConfirmContinue() {
+function pipeGateAction(action) {
   document.getElementById('pipe-confirm-gate').style.display = 'none';
-  if (_pipeConfirmResolve) { _pipeConfirmResolve(true); _pipeConfirmResolve = null; }
+  if (_pipeGateResolve) { _pipeGateResolve(action); _pipeGateResolve = null; }
 }
-function pipeConfirmStop() {
-  document.getElementById('pipe-confirm-gate').style.display = 'none';
-  if (_pipeConfirmResolve) { _pipeConfirmResolve(false); _pipeConfirmResolve = null; }
-}
+// Legacy aliases for any lingering calls
+function pipeConfirmContinue() { pipeGateAction('finish'); }
+function pipeConfirmStop()     { pipeGateAction('stop');   }
 
-function _showPipeConfirmGate(completedName, nextName, summaryLines) {
-  /* Returns a Promise that resolves true (continue) or false (stop). */
-  const gate = document.getElementById('pipe-confirm-gate');
-  document.getElementById('pipe-gate-title').textContent =
-    `✓ "${completedName}" complete${nextName ? ' — ready for next step' : ' — pipeline done'}`;
-  document.getElementById('pipe-gate-body').textContent =
-    summaryLines.length ? summaryLines.slice(-6).join('  ·  ') : 'Step finished with no output.';
-  document.getElementById('pipe-gate-next-name').textContent = nextName || '';
-  const cont = document.getElementById('pipe-gate-continue');
-  if (nextName) {
-    cont.style.display = '';
-    cont.textContent = `Continue → ${nextName}`;
+function _showPipeGate(succeeded, completedName, nextName, summaryLines) {
+  /* Returns a Promise that resolves with an action string. */
+  const gate     = document.getElementById('pipe-confirm-gate');
+  const icon     = document.getElementById('pipe-gate-icon');
+  const title    = document.getElementById('pipe-gate-title');
+  const body     = document.getElementById('pipe-gate-body');
+  const btnFinish = document.getElementById('pipe-btn-finish');
+  const btnRedo   = document.getElementById('pipe-btn-redo');
+  const btnSkip   = document.getElementById('pipe-btn-skip');
+  const nextLabel = document.getElementById('pipe-gate-next-label');
+
+  const nextText = nextName ? ` → ${nextName}` : '';
+
+  if (succeeded) {
+    gate.style.setProperty('--pipe-gate-border', 'rgba(52,211,153,.35)');
+    gate.style.setProperty('--pipe-gate-bg',     'rgba(52,211,153,.05)');
+    icon.textContent  = '✓';
+    title.textContent = `"${completedName}" complete`;
+    body.textContent  = summaryLines.length
+      ? summaryLines.filter(l => l.trim()).slice(-5).join('  ·  ')
+      : 'Step finished successfully.';
+    btnFinish.textContent = nextName ? `Finish${nextText}` : 'Finish';
+    btnFinish.style.display = '';
+    btnRedo.style.display  = 'none';
+    btnSkip.style.display  = 'none';
+    nextLabel.textContent  = '';
   } else {
-    cont.style.display = 'none';
+    gate.style.setProperty('--pipe-gate-border', 'rgba(239,68,68,.35)');
+    gate.style.setProperty('--pipe-gate-bg',     'rgba(239,68,68,.05)');
+    icon.textContent  = '⚠';
+    title.textContent = `"${completedName}" did not complete`;
+    body.textContent  = 'Step stopped or failed. Choose how to proceed:';
+    btnFinish.style.display = 'none';
+    btnRedo.style.display   = '';
+    btnSkip.textContent     = nextName ? `Skip${nextText}` : 'Skip';
+    btnSkip.style.display   = nextName ? '' : 'none';
+    nextLabel.textContent   = '';
   }
+
   gate.style.display = '';
-  return new Promise(resolve => { _pipeConfirmResolve = resolve; });
+  return new Promise(resolve => { _pipeGateResolve = resolve; });
 }
 
 /* ── Run a single pipeline step via /api/run/pipeline ──────────────────────── */
@@ -2447,9 +2490,10 @@ async function runPipeline() {
     }
   };
 
-  /* ── CONFIRM MODE: run one step at a time ───────────────────────────────── */
+  /* ── CONFIRM MODE: run one step at a time with gate between each ─────────── */
   if (confirmMode) {
-    for (let i = 0; i < pipelineSteps.length; i++) {
+    let i = 0;
+    while (i < pipelineSteps.length) {
       const s    = pipelineSteps[i];
       const def  = PIPE_STEPS[s.type] || { name: s.type, icon: '⚙', desc: '' };
       const step = { type: s.type, name: def.name, config: {} };
@@ -2472,19 +2516,30 @@ async function runPipeline() {
       if (el) el.className = result.exitCode === 0 ? 'pipe-step done' : 'pipe-step failed';
       if (result.reportPath) capturedCsv = result.reportPath;
 
-      if (result.exitCode !== 0) {
-        finish(result.exitCode, def.name, false);
-        return;
-      }
+      const succeeded = result.exitCode === 0;
+      const nextStep  = pipelineSteps[i + 1];
+      const nextName  = nextStep ? (PIPE_STEPS[nextStep.type] || { name: nextStep.type }).name : null;
+      const summaryLines = result.outputLines.filter(l => l.trim());
 
-      /* Pause for confirmation unless this is the last step */
-      const nextStep = pipelineSteps[i + 1];
-      const nextName = nextStep ? (PIPE_STEPS[nextStep.type] || { name: nextStep.type }).name : null;
-      const summaryLines = result.outputLines.filter(l => l.trim() && !l.startsWith(' '));
-      const shouldContinue = await _showPipeConfirmGate(def.name, nextName, summaryLines);
-      if (!shouldContinue) {
-        finish(0, null, true);
+      /* Show gate — returns 'finish' | 'redo' | 'skip' | 'stop' */
+      const action = await _showPipeGate(succeeded, def.name, nextName, summaryLines);
+
+      if (action === 'stop') {
+        finish(succeeded ? 0 : result.exitCode, null, true);
         return;
+      } else if (action === 'redo') {
+        /* Re-do: mark step as pending again and restart the same index */
+        if (el) el.className = 'pipe-step';
+        appendLog(`↺ Re-doing "${def.name}"…`, 'dim');
+        continue;   // i stays the same
+      } else if (action === 'skip') {
+        /* Skip: advance past this step */
+        appendLog(`⤳ Skipped "${def.name}"`, 'dim');
+        i++;
+        continue;
+      } else {
+        /* finish: accept step result, advance to next */
+        i++;
       }
     }
     finish(0, null, false);
