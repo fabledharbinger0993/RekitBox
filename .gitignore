@@ -26,6 +26,9 @@ env/
 .env
 settings.json
 
+# Setup sentinel (written by setup.sh, local to each machine)
+.superbox_ready
+
 # Test artifacts
 *.bak
 *.tmp
