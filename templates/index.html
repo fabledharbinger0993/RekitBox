@@ -2626,7 +2626,9 @@ function orgAddSource() {
   row.style.cssText = 'display:flex;gap:6px;align-items:center;';
   row.innerHTML = `<input type="text" class="org-source-input" placeholder="/Volumes/AnotherDrive" style="flex:1"><button type="button" onclick="this.closest('.org-source-row').remove()" style="background:none;border:1px solid var(--border-hi);color:var(--text-dim);border-radius:var(--radius);padding:4px 9px;font-size:.8rem;cursor:pointer;flex-shrink:0;" title="Remove this source">✕</button>`;
   list.appendChild(row);
-  row.querySelector('input').focus();
+  const inp = row.querySelector('input');
+  setupDropZone(inp);
+  inp.focus();
 }
 
 function orgUpdateMode(val) {
@@ -3290,6 +3292,70 @@ const _origOpenLog  = openLog;
 const _origCloseLog = closeLog;
 openLog  = function(t) { _origOpenLog(t);  document.body.classList.add('log-open');    };
 closeLog = function()   { _origCloseLog();  document.body.classList.remove('log-open'); };
+
+/* ── Drag-and-drop path inputs ─────────────────────────────────────────── */
+/* macOS Finder drag exposes file:///path via text/uri-list.                 */
+/* Strips the file://[authority] prefix and URI-decodes the result.          */
+function _extractDropPath(e) {
+  const uriList = e.dataTransfer.getData('text/uri-list');
+  if (uriList) {
+    const first = uriList.trim().split(/\r?\n/).find(l => l.startsWith('file://'));
+    if (first) return decodeURIComponent(first.replace(/^file:\/\/[^/]*/, ''));
+  }
+  const plain = e.dataTransfer.getData('text/plain');
+  if (plain && plain.trim().startsWith('/')) return plain.trim();
+  return null;
+}
+
+function setupDropZone(input) {
+  if (!input || input.dataset.dropReady) return;
+  input.dataset.dropReady = '1';
+
+  // Wrap in .drop-wrap (provides positioning context for the badge)
+  if (!input.parentElement.classList.contains('drop-wrap')) {
+    const wrap = document.createElement('div');
+    wrap.className = 'drop-wrap';
+    // If the input has an inline flex value, transfer it to the wrap
+    if (input.style.flex) wrap.style.flex = input.style.flex;
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const badge = document.createElement('span');
+    badge.className = 'drop-badge';
+    badge.textContent = '⤵ drop';
+    wrap.appendChild(badge);
+  }
+
+  input.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    input.classList.add('drop-active');
+  });
+  input.addEventListener('dragleave', () => input.classList.remove('drop-active'));
+  input.addEventListener('drop', e => {
+    e.preventDefault();
+    input.classList.remove('drop-active');
+    const path = _extractDropPath(e);
+    if (path) {
+      input.value = path;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.classList.add('drop-filled');
+      input.addEventListener('animationend', () => input.classList.remove('drop-filled'), { once: true });
+    }
+  });
+}
+
+function setupAllDropZones() {
+  [
+    'audit-root', 'process-path', 'dupes-path', 'dupes-output',
+    'prune-csv-path', 'relocate-old', 'relocate-new',
+    'import-path', 'link-path', 'normalize-path', 'convert-path',
+    'organize-target', 'novelty-source', 'novelty-dest',
+    'settings-custom-input'
+  ].forEach(id => { const el = document.getElementById(id); if (el) setupDropZone(el); });
+  document.querySelectorAll('.org-source-input').forEach(setupDropZone);
+}
+
+setupAllDropZones();
 </script>
 </body>
 </html>
