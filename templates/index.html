@@ -98,9 +98,6 @@
   <button class="step-tab" data-target="step-novelty">
     <span class="step-num">★</span> Novelty
   </button>
-  <button class="step-tab" data-target="step-pipeline" style="border-color:var(--accent);color:var(--accent)">
-    <span class="step-num" style="background:var(--accent);color:#fff">▶</span> Pipeline
-  </button>
 </nav>
 
 <!-- ══ Main ════════════════════════════════════════════════════════════════ -->
@@ -917,199 +914,165 @@
 
 
 
-  <p class="section-title" style="margin-top:48px">Pipeline Builder — chain any combination of steps</p>
-
-    <!-- ── Pipeline Builder ──────────────────────────────────────────────── -->
-  <div class="card" id="step-pipeline" style="--card-watermark:url('/static/SRB_LOGO.png');max-width:100%">
-    <div class="card-head">
-      <div class="card-icon" style="background:var(--accent-dim)"><span style="font-size:1.3rem">▶</span></div>
-      <div class="card-meta">
-        <div class="card-title">Pipeline — Run Steps in Any Order, Start to Finish</div>
-        <div class="card-blurb">Pick which steps to run and in what order. Each step uses the settings you've already configured in its own card. You can run a single step or chain all of them — SuperBox handles the rest.</div>
+  <!-- ── Pipeline step-confirm gate (standalone fixed overlay) ─────────────── -->
+  <div id="pipe-confirm-gate" style="display:none;position:fixed;bottom:calc(var(--log-h) + var(--scan-bar-h) + 16px);left:50%;transform:translateX(-50%);width:min(600px,92vw);z-index:1100;padding:14px 16px;border-radius:8px;border:1px solid var(--pipe-gate-border, rgba(251,191,36,.35));background:var(--pipe-gate-bg, rgba(251,191,36,.06));backdrop-filter:blur(8px);box-shadow:0 8px 32px rgba(0,0,0,.6);">
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <span id="pipe-gate-icon" style="font-size:1.3rem;line-height:1">✓</span>
+      <div style="flex:1">
+        <div id="pipe-gate-title" style="font-weight:600;color:var(--text);margin-bottom:4px">Step complete</div>
+        <div id="pipe-gate-body" style="color:var(--text-muted);line-height:1.5;font-size:.82rem;margin-bottom:12px"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-neon" id="pipe-btn-finish" onclick="pipeGateAction('finish')" style="padding:7px 22px;display:none">Finish</button>
+          <button class="btn btn-neon" id="pipe-btn-redo" onclick="pipeGateAction('redo')" style="padding:7px 18px;display:none">Re-do</button>
+          <button class="btn" id="pipe-btn-skip" onclick="pipeGateAction('skip')" style="padding:7px 18px;display:none;border-color:var(--caution);color:var(--caution)">Skip</button>
+          <button class="btn" onclick="pipeGateAction('stop')" style="color:var(--danger);border-color:var(--danger);padding:7px 16px">Stop</button>
+          <span id="pipe-gate-next-label" style="font-size:.78rem;color:var(--text-dim);margin-left:4px"></span>
+        </div>
       </div>
-      <span class="risk-badge caution">Chains Steps</span>
     </div>
+  </div>
+</main>
 
-    <div class="pipeline-builder">
+<!-- ══ Pipeline Wizard ══════════════════════════════════════════════════════ -->
+<div id="pipeline-wizard-backdrop" class="hidden" onclick="if(event.target===this)closePipelineWizard()">
+  <div id="pipeline-wizard">
 
-      <!-- Left column: available actions -->
-      <div class="pipeline-actions">
-        <div class="pipe-col-label">Available steps — click to add</div>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('audit')" title="DB snapshot + full physical filesystem scan">
-          <img src="/static/icon-audit.png" class="pipe-action-icon" alt="Library Audit">
-          <span class="pipe-action-text">
-            <strong>Library Audit</strong>
-            <span>DB snapshot + physical filesystem inventory</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('process')" title="Write BPM and Key tags into every file">
-          <img src="/static/icon-tag.png" class="pipe-action-icon" alt="Tag Tracks">
-          <span class="pipe-action-text">
-            <strong>Tag Tracks</strong>
-            <span>Writes BPM and musical key into each file</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('duplicates')" title="Find identical recordings no matter how they're named">
-          <img src="/static/icon-find-duplicate.png" class="pipe-action-icon" alt="Find Duplicates">
-          <span class="pipe-action-text">
-            <strong>Find Duplicates</strong>
-            <span>Scans for files that are the same recording</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('prune')" title="Remove the copies confirmed in Find Duplicates">
-          <img src="/static/icon-prune.png" class="pipe-action-icon" alt="Prune Duplicates">
-          <span class="pipe-action-text">
-            <strong>Prune Duplicates</strong>
-            <span>Remove copies found by Find Duplicates</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('relocate')" title="Update RekordBox after files have moved">
-          <img src="/static/icon-move.png" class="pipe-action-icon" alt="Fix Broken Paths">
-          <span class="pipe-action-text">
-            <strong>Fix Broken Paths</strong>
-            <span>Update RekordBox after files have moved</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('import')" title="Add new audio files into the RekordBox database">
-          <img src="/static/icon-import.png" class="pipe-action-icon" alt="Import Tracks">
-          <span class="pipe-action-text">
-            <strong>Import Tracks</strong>
-            <span>Add new audio files to RekordBox database</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('link')" title="Link imported tracks to playlists by folder name">
-          <img src="/static/icon-link.png" class="pipe-action-icon" alt="Link Playlists">
-          <span class="pipe-action-text">
-            <strong>Link Playlists</strong>
-            <span>Connect tracks to playlists by folder name</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('normalize')" title="Re-encode tracks that are too loud or too quiet">
-          <img src="/static/icon-normalize.png" class="pipe-action-icon" alt="Balance Loudness">
-          <span class="pipe-action-text">
-            <strong>Balance Loudness</strong>
-            <span>Brings every track to the same volume level</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('convert')" title="Change every file to your chosen audio format">
-          <img src="/static/icon-convert.png" class="pipe-action-icon" alt="Convert Format">
-          <span class="pipe-action-text">
-            <strong>Convert Format</strong>
-            <span>Changes files to AIFF, MP3, WAV, or FLAC</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('organize')" title="Move files into Artist / Album / Track folders">
-          <img src="/static/icon-organizer.png" class="pipe-action-icon" alt="Organize Library">
-          <span class="pipe-action-text">
-            <strong>Organize Library</strong>
-            <span>Moves files into Artist / Album / Track order</span>
-          </span>
-        </button>
-
-        <button class="pipe-action-btn" onclick="pipelineAddStep('novelty')" title="Copy tracks that exist only on the source drive into your library">
-          <img src="/static/icon-novelty.png" class="pipe-action-icon" alt="Novelty Scan">
-          <span class="pipe-action-text">
-            <strong>Novelty Scan</strong>
-            <span>Copy unique tracks from source into library</span>
-          </span>
-        </button>
-
-        <div style="margin-top:auto;padding-top:16px;border-top:1px solid var(--border)">
-          <button class="btn" style="width:100%;font-size:.8rem;padding:8px;" onclick="pipelineLoadRecommended()">★ Load recommended order</button>
+    <!-- ── Phase 1: Build your pipeline ──────────────────────────────────── -->
+    <div id="pipe-wiz-p1">
+      <div class="pipe-wiz-header">
+        <img src="/static/SRB_LOGO.png" alt="" style="width:26px;height:26px;object-fit:contain;opacity:.7;mix-blend-mode:screen;flex-shrink:0">
+        <div style="flex:1">
+          <div class="pipe-wiz-title">Pipeline Wizard</div>
+          <div class="pipe-wiz-sub">Choose your steps and order, then configure each one.</div>
         </div>
+        <button class="welcome-close" onclick="closePipelineWizard()" title="Close">✕</button>
       </div>
 
-      <!-- Right column: pipeline queue -->
-      <div class="pipeline-queue-wrap">
-        <div class="pipe-col-label">
-          Your pipeline — runs top to bottom
-          <button onclick="pipelineClear()" style="float:right;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:.8rem;padding:0" title="Remove all steps">Clear all</button>
-        </div>
+      <div class="pipe-wiz-body">
 
-        <div id="pipeline-queue" class="pipeline-queue">
-          <div class="pipe-empty" id="pipe-empty-msg">
-            No steps added yet.<br>
-            <span style="font-size:.8rem;color:var(--text-dim)">Click an action on the left to start building.</span>
+        <!-- Left: available steps -->
+        <div class="pipe-wiz-available">
+          <div class="pipe-col-label" style="margin-bottom:10px">Available steps — click to add</div>
+
+          <button class="pipe-action-btn" onclick="pipelineAddStep('audit')" title="DB snapshot + full physical filesystem scan">
+            <img src="/static/icon-audit.png" class="pipe-action-icon" alt="Library Audit">
+            <span class="pipe-action-text"><strong>Library Audit</strong><span>DB snapshot + physical filesystem inventory</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('process')" title="Write BPM and Key tags into every file">
+            <img src="/static/icon-tag.png" class="pipe-action-icon" alt="Tag Tracks">
+            <span class="pipe-action-text"><strong>Tag Tracks</strong><span>Writes BPM and musical key into each file</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('duplicates')" title="Find identical recordings no matter how they're named">
+            <img src="/static/icon-find-duplicate.png" class="pipe-action-icon" alt="Find Duplicates">
+            <span class="pipe-action-text"><strong>Find Duplicates</strong><span>Scans for files that are the same recording</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('prune')" title="Remove the copies confirmed in Find Duplicates">
+            <img src="/static/icon-prune.png" class="pipe-action-icon" alt="Prune Duplicates">
+            <span class="pipe-action-text"><strong>Prune Duplicates</strong><span>Remove copies found by Find Duplicates</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('relocate')" title="Update RekordBox after files have moved">
+            <img src="/static/icon-move.png" class="pipe-action-icon" alt="Fix Broken Paths">
+            <span class="pipe-action-text"><strong>Fix Broken Paths</strong><span>Update RekordBox after files have moved</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('import')" title="Add new audio files into the RekordBox database">
+            <img src="/static/icon-import.png" class="pipe-action-icon" alt="Import Tracks">
+            <span class="pipe-action-text"><strong>Import Tracks</strong><span>Add new audio files to RekordBox database</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('link')" title="Link imported tracks to playlists by folder name">
+            <img src="/static/icon-link.png" class="pipe-action-icon" alt="Link Playlists">
+            <span class="pipe-action-text"><strong>Link Playlists</strong><span>Connect tracks to playlists by folder name</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('normalize')" title="Re-encode tracks that are too loud or too quiet">
+            <img src="/static/icon-normalize.png" class="pipe-action-icon" alt="Balance Loudness">
+            <span class="pipe-action-text"><strong>Balance Loudness</strong><span>Brings every track to the same volume level</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('convert')" title="Change every file to your chosen audio format">
+            <img src="/static/icon-convert.png" class="pipe-action-icon" alt="Convert Format">
+            <span class="pipe-action-text"><strong>Convert Format</strong><span>Changes files to AIFF, MP3, WAV, or FLAC</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('organize')" title="Move files into Artist / Album / Track folders">
+            <img src="/static/icon-organizer.png" class="pipe-action-icon" alt="Organize Library">
+            <span class="pipe-action-text"><strong>Organize Library</strong><span>Moves files into Artist / Album / Track order</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('novelty')" title="Copy tracks that exist only on the source drive">
+            <img src="/static/icon-novelty.png" class="pipe-action-icon" alt="Novelty Scan">
+            <span class="pipe-action-text"><strong>Novelty Scan</strong><span>Copy unique tracks from source into library</span></span>
+          </button>
+
+          <div style="margin-top:auto;padding-top:14px;border-top:1px solid var(--border)">
+            <button class="btn" style="width:100%;font-size:.8rem;padding:8px" onclick="pipelineLoadRecommended()">★ Load recommended order</button>
           </div>
         </div>
 
-        <div style="margin-top:12px;padding:10px 12px;background:var(--surface-hi);border:1px solid var(--border);border-radius:var(--radius);font-size:.8rem;color:var(--text-dim);line-height:1.5" id="pipe-config-note" class="hidden">
-          Each step uses the settings from its card above. Change paths, workers, or format options in the individual step cards — the pipeline picks them up automatically.
-        </div>
-
-        <div style="margin-top:12px">
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:500;font-size:.9rem;margin-bottom:10px">
-            <input type="checkbox" id="pipeline-dry-run" checked style="width:16px;height:16px;accent-color:var(--accent)">
-            Dry Run — show what would happen without changing anything
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:.85rem;margin-bottom:14px;color:var(--text-muted)">
-            <input type="checkbox" id="pipeline-confirm-steps" style="width:15px;height:15px;accent-color:var(--caution)">
-            Confirm between steps — pause after each step completes and require approval before continuing
-          </label>
-          <div class="btn-row">
-            <button class="btn btn-neon" id="btn-pipeline" onclick="runPipeline()" style="flex:1;justify-content:center">▶ Run Pipeline</button>
+        <!-- Right: pipeline queue -->
+        <div class="pipe-wiz-queue-col">
+          <div class="pipe-col-label" style="margin-bottom:10px">
+            Your pipeline — runs top to bottom
+            <button onclick="pipelineClear()" style="float:right;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:.8rem;padding:0" title="Remove all steps">Clear all</button>
           </div>
-        </div>
-
-        <!-- ── Step confirmation gate (shown between pipeline steps) ───────── -->
-        <div id="pipe-confirm-gate" style="display:none;margin-top:16px;padding:14px 16px;
-             border-radius:8px;font-size:.86rem;border:1px solid var(--pipe-gate-border, rgba(251,191,36,.35));
-             background:var(--pipe-gate-bg, rgba(251,191,36,.06));">
-          <div style="display:flex;align-items:flex-start;gap:12px;">
-            <span id="pipe-gate-icon" style="font-size:1.3rem;line-height:1">✓</span>
-            <div style="flex:1">
-              <div id="pipe-gate-title" style="font-weight:600;color:var(--text);margin-bottom:4px">Step complete</div>
-              <div id="pipe-gate-body" style="color:var(--text-muted);line-height:1.5;font-size:.82rem;margin-bottom:12px"></div>
-              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                <!-- Success buttons -->
-                <button class="btn btn-neon" id="pipe-btn-finish" onclick="pipeGateAction('finish')"
-                        style="padding:7px 22px;display:none">
-                  Finish
-                </button>
-                <!-- Failure buttons -->
-                <button class="btn btn-neon" id="pipe-btn-redo" onclick="pipeGateAction('redo')"
-                        style="padding:7px 18px;display:none">
-                  Re-do
-                </button>
-                <button class="btn" id="pipe-btn-skip" onclick="pipeGateAction('skip')"
-                        style="padding:7px 18px;display:none;border-color:var(--caution);color:var(--caution)">
-                  Skip
-                </button>
-                <!-- Always shown -->
-                <button class="btn" onclick="pipeGateAction('stop')"
-                        style="color:var(--danger);border-color:var(--danger);padding:7px 16px">
-                  Stop
-                </button>
-                <span id="pipe-gate-next-label"
-                      style="font-size:.78rem;color:var(--text-dim);margin-left:4px"></span>
-              </div>
+          <div id="pipeline-queue" class="pipeline-queue">
+            <div class="pipe-empty" id="pipe-empty-msg">
+              No steps added yet.<br>
+              <span style="font-size:.8rem;color:var(--text-dim)">Click an action on the left to start building.</span>
             </div>
           </div>
+          <div id="pipe-recommended-note" class="hidden" style="margin-top:12px;padding:10px 12px;background:var(--surface-hi);border:1px solid var(--border);border-radius:var(--radius);font-size:.78rem;line-height:1.5;color:var(--text-dim)">
+            <strong style="color:var(--text)">Why this order?</strong> Tag first so BPM/key are ready for duplicate detection. Find duplicates before deleting. Prune after reviewing. Relocate so DB paths are correct. Organize once clean. Normalize last.
+          </div>
         </div>
+
       </div>
 
+      <div class="pipe-wiz-footer">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:500">
+          <input type="checkbox" id="wiz-dry-run" checked style="width:15px;height:15px;accent-color:var(--accent)">
+          Dry Run — preview only
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;color:var(--text-muted)">
+          <input type="checkbox" id="wiz-confirm-steps" style="width:14px;height:14px;accent-color:var(--caution)">
+          Confirm between steps
+        </label>
+        <div style="margin-left:auto;display:flex;gap:10px">
+          <button class="btn" onclick="closePipelineWizard()">Cancel</button>
+          <button class="btn btn-neon" onclick="pipeWizNext()">Configure Steps →</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Recommended order explanation (shown after loading preset) -->
-    <div id="pipe-recommended-note" class="hidden" style="margin-top:16px;padding:12px 16px;background:var(--surface-hi);border:1px solid var(--border);border-radius:var(--radius);font-size:.82rem;line-height:1.6;color:var(--text-dim)">
-      <strong style="color:var(--text)">Why this order?</strong><br>
-      Tag first so BPM and key are available for the duplicate pre-filter — this makes duplicate detection significantly faster. Find duplicates before deleting anything. Prune after you've reviewed the report. Relocate next so RekordBox paths are correct before you move files. Convert only what you're keeping. Organize the library structure once it's clean. Normalize loudness last — no point re-encoding a file you might later delete or re-convert.
+    <!-- ── Phase 2: Configure each step ───────────────────────────────────── -->
+    <div id="pipe-wiz-p2" class="hidden">
+      <div class="pipe-wiz-header">
+        <img src="/static/SRB_LOGO.png" alt="" style="width:26px;height:26px;object-fit:contain;opacity:.7;mix-blend-mode:screen;flex-shrink:0">
+        <div style="flex:1">
+          <div class="pipe-wiz-title">Configure Steps</div>
+          <div class="pipe-wiz-sub">Set paths and options — click a step on the left to jump to it.</div>
+        </div>
+        <button class="welcome-close" onclick="closePipelineWizard()" title="Close">✕</button>
+      </div>
+
+      <div class="pipe-wiz-p2-body">
+        <!-- Left: step stack -->
+        <div class="pipe-wiz-stack" id="pipe-wiz-stack"></div>
+        <!-- Right: config forms (scrollable) -->
+        <div class="pipe-wiz-configs" id="pipe-wiz-configs"></div>
+      </div>
+
+      <div class="pipe-wiz-footer">
+        <button class="btn" onclick="pipeWizBack()">← Back</button>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:500">
+          <input type="checkbox" id="wiz-dry-run-2" checked style="width:15px;height:15px;accent-color:var(--accent)">
+          Dry Run
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;color:var(--text-muted)">
+          <input type="checkbox" id="wiz-confirm-steps-2" style="width:14px;height:14px;accent-color:var(--caution)">
+          Confirm between steps
+        </label>
+        <button class="btn btn-neon" id="wiz-run-btn" onclick="pipeWizRun()" style="margin-left:auto">▶ Run Pipeline</button>
+      </div>
     </div>
 
   </div>
-
-
-</main>
+</div>
 
 <!-- ══ Step completion report modal ════════════════════════════════════════ -->
 <div id="report-modal-backdrop" class="hidden">
@@ -1146,6 +1109,12 @@
 </footer>
 
 <!-- ══ Floating action buttons ══════════════════════════════════════════════ -->
+<!-- ── Pipeline Wizard button ─────────────────────────────────────────────── -->
+<div id="pipeline-btn" onclick="openPipelineWizard()" title="Pipeline Wizard">
+  <span style="font-size:1.1rem;line-height:1">▶</span>
+  <span>Pipeline</span>
+</div>
+
 <div id="lightbulb-btn" onclick="openWelcome()" title="About SuperBox">
   <span style="font-size:1.1rem;line-height:1">💡</span>
   <span>About</span>
@@ -1894,11 +1863,7 @@ if (!localStorage.getItem('superbox-welcome-seen')) {
 function choosePath(mode) {
   document.getElementById('path-backdrop').classList.add('hidden');
   if (mode === 'pipeline') {
-    const tab = document.querySelector('[data-target="step-pipeline"]');
-    if (tab) {
-      tab.click();
-      document.getElementById('step-pipeline')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    openPipelineWizard();
   }
 }
 
@@ -2353,9 +2318,247 @@ const RECOMMENDED = ['process','duplicates','prune','relocate','import','link','
 let pipelineSteps = [];   // [{id, type}]
 let pipeUid = 0;
 
+/* ══ Pipeline Wizard ═════════════════════════════════════════════════════════ */
+
+function openPipelineWizard() {
+  const backdrop = document.getElementById('pipeline-wizard-backdrop');
+  backdrop.classList.remove('hidden');
+  // Reset to phase 1
+  document.getElementById('pipe-wiz-p1').style.opacity = '1';
+  document.getElementById('pipe-wiz-p1').classList.remove('hidden');
+  document.getElementById('pipe-wiz-p2').classList.add('hidden');
+  document.getElementById('pipeline-wizard').classList.remove('wizard-wide');
+  pulseModal(document.getElementById('pipeline-wizard'));
+}
+
+function closePipelineWizard() {
+  document.getElementById('pipeline-wizard-backdrop').classList.add('hidden');
+}
+
+function pipeWizNext() {
+  if (pipelineSteps.length === 0) {
+    alert('Add at least one step to the pipeline first.');
+    return;
+  }
+  const p1 = document.getElementById('pipe-wiz-p1');
+  const p2 = document.getElementById('pipe-wiz-p2');
+  const wiz = document.getElementById('pipeline-wizard');
+
+  // Fade out phase 1
+  p1.style.transition = 'opacity .2s';
+  p1.style.opacity = '0';
+
+  setTimeout(() => {
+    p1.classList.add('hidden');
+    p1.style.opacity = '';
+    p1.style.transition = '';
+
+    // Widen the modal
+    wiz.classList.add('wizard-wide');
+
+    // Build and show phase 2
+    pipeWizBuildConfigs();
+    p2.classList.remove('hidden');
+    p2.style.opacity = '0';
+    p2.style.transition = 'opacity .25s';
+
+    // Sync checkboxes
+    document.getElementById('wiz-dry-run-2').checked   = document.getElementById('wiz-dry-run').checked;
+    document.getElementById('wiz-confirm-steps-2').checked = document.getElementById('wiz-confirm-steps').checked;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        p2.style.opacity = '1';
+        setTimeout(() => { p2.style.transition = ''; p2.style.opacity = ''; }, 280);
+      });
+    });
+  }, 220);
+}
+
+function pipeWizBack() {
+  const p1 = document.getElementById('pipe-wiz-p1');
+  const p2 = document.getElementById('pipe-wiz-p2');
+  const wiz = document.getElementById('pipeline-wizard');
+
+  p2.style.transition = 'opacity .2s';
+  p2.style.opacity = '0';
+
+  setTimeout(() => {
+    p2.classList.add('hidden');
+    p2.style.opacity = '';
+    p2.style.transition = '';
+    wiz.classList.remove('wizard-wide');
+    p1.classList.remove('hidden');
+    p1.style.opacity = '0';
+    p1.style.transition = 'opacity .25s';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        p1.style.opacity = '1';
+        setTimeout(() => { p1.style.transition = ''; p1.style.opacity = ''; }, 280);
+      });
+    });
+  }, 220);
+}
+
+function pipeWizRun() {
+  if (pipelineSteps.length === 0) return;
+  // Cache configs on each step object
+  pipelineSteps.forEach(s => {
+    s._config = _pipelineReadConfig(s);
+    _savePipeCfg(s.type, s._config);
+  });
+  const dryRun     = document.getElementById('wiz-dry-run-2').checked;
+  const confirmMode = document.getElementById('wiz-confirm-steps-2').checked;
+  closePipelineWizard();
+  runPipeline(dryRun, confirmMode);
+}
+
+function pipeWizBuildConfigs() {
+  const stack   = document.getElementById('pipe-wiz-stack');
+  const configs = document.getElementById('pipe-wiz-configs');
+  stack.innerHTML = '';
+  configs.innerHTML = '';
+
+  pipelineSteps.forEach((step, i) => {
+    const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/SRB_LOGO.png', desc: '' };
+    const saved = _loadPipeCfg(step.type);
+
+    // Stack item
+    const si = document.createElement('div');
+    si.className = 'pipe-wiz-stack-item' + (i === 0 ? ' active' : '');
+    si.id = `pipe-wiz-si-${i}`;
+    si.onclick = () => pipeWizSelectStep(i);
+    si.innerHTML = `
+      <div class="pipe-step-num" style="width:20px;height:20px;font-size:.68rem;flex-shrink:0">${i + 1}</div>
+      <img src="${def.icon}" style="width:16px;height:16px;object-fit:contain;flex-shrink:0">
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${def.name}</span>`;
+    stack.appendChild(si);
+
+    // Config section
+    const sec = document.createElement('div');
+    sec.className = 'pipe-cfg-section';
+    sec.id = `pipe-cfg-sec-${i}`;
+    sec.innerHTML = `
+      <div class="pipe-cfg-section-header">
+        <div class="pipe-step-num" style="flex-shrink:0">${i + 1}</div>
+        <img src="${def.icon}" style="width:20px;height:20px;object-fit:contain">
+        <strong>${def.name}</strong>
+        <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;margin-left:4px">— ${def.desc}</span>
+      </div>
+      ${_pipeWizConfigHTML(step, saved)}`;
+    configs.appendChild(sec);
+  });
+}
+
+function pipeWizSelectStep(i) {
+  document.querySelectorAll('.pipe-wiz-stack-item').forEach((el, j) => {
+    el.classList.toggle('active', j === i);
+  });
+  const sec = document.getElementById(`pipe-cfg-sec-${i}`);
+  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function _pipeWizConfigHTML(step, saved) {
+  const id = step.id;
+  const v  = (field, fallback) => (saved && saved[field] !== undefined) ? saved[field] : (fallback || '');
+
+  const pathRow = (field, label, placeholder) => `
+    <div class="pipe-cfg-field">
+      <label class="pipe-cfg-label">${label}</label>
+      <input type="text" class="pipe-cfg-input" id="wcfg-${id}-${field}"
+             value="${v(field)}" placeholder="${placeholder}">
+    </div>`;
+
+  const workersRow = () => `
+    <div class="pipe-cfg-field" style="width:100px">
+      <label class="pipe-cfg-label">Workers</label>
+      <input type="number" class="pipe-cfg-input pipe-cfg-num" id="wcfg-${id}-workers"
+             value="${v('workers', 1)}" min="1" max="8">
+    </div>`;
+
+  switch (step.type) {
+    case 'audit':
+      return pathRow('root', 'Music root (optional)', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'process':
+      return pathRow('path', 'Music root', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    case 'normalize':
+      return pathRow('path', 'Music root', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    case 'duplicates':
+      return pathRow('path', 'Scan path', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    case 'prune':
+      return `<p class="pipe-cfg-note">Prune uses the duplicate report from the Find Duplicates step above — no additional configuration needed.</p>`;
+
+    case 'convert':
+      return pathRow('path', 'Files path', '/Volumes/DJMT/DJMT PRIMARY') + `
+        <div class="pipe-cfg-field-row">
+          <div class="pipe-cfg-field">
+            <label class="pipe-cfg-label">Output format</label>
+            <select class="pipe-cfg-input" id="wcfg-${id}-format">
+              ${['aiff','mp3','wav','flac'].map(f =>
+                `<option value="${f}" ${v('format','aiff') === f ? 'selected' : ''}>${f.toUpperCase()}</option>`
+              ).join('')}
+            </select>
+          </div>
+          ${workersRow()}
+        </div>`;
+
+    case 'relocate':
+      return pathRow('old_root', 'Old path prefix', '/Volumes/OldDrive/Music') +
+             pathRow('new_root', 'New path prefix', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'import':
+      return pathRow('path', 'Import from', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'link':
+      return pathRow('path', 'Library path', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'organize':
+      return pathRow('source', 'Source path', '/Volumes/DJMT/DJMT PRIMARY') +
+             pathRow('target', 'Target path', '/Volumes/DJMT/DJMT PRIMARY') + `
+        <div class="pipe-cfg-field-row">
+          <div class="pipe-cfg-field">
+            <label class="pipe-cfg-label">Mode</label>
+            <select class="pipe-cfg-input" id="wcfg-${id}-mode">
+              <option value="assimilate" ${v('mode','assimilate') === 'assimilate' ? 'selected' : ''}>Assimilate</option>
+              <option value="integrate"  ${v('mode','assimilate') === 'integrate'  ? 'selected' : ''}>Integrate</option>
+            </select>
+          </div>
+          ${workersRow()}
+        </div>`;
+
+    case 'novelty':
+      return pathRow('source', 'Source drive', '/Volumes/Passport') +
+             pathRow('dest',   'Home library', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    default:
+      return `<p class="pipe-cfg-note">No configuration needed for this step.</p>`;
+  }
+}
+
+function _savePipeCfg(type, cfg) {
+  try { localStorage.setItem(`sb_pipe_cfg_${type}`, JSON.stringify(cfg)); } catch(_) {}
+}
+
+function _loadPipeCfg(type) {
+  try { return JSON.parse(localStorage.getItem(`sb_pipe_cfg_${type}`)) || {}; } catch(_) { return {}; }
+}
+
 function pipelineAddStep(type) {
   pipelineSteps.push({ id: ++pipeUid, type });
   pipelineRender();
+  // Flash the clicked button
+  const btn = [...document.querySelectorAll('#pipe-wiz-p1 .pipe-action-btn')]
+    .find(b => (b.getAttribute('onclick') || '').includes(`'${type}'`));
+  if (btn) {
+    btn.classList.remove('pipe-added');
+    void btn.offsetWidth;
+    btn.classList.add('pipe-added');
+    btn.addEventListener('animationend', () => btn.classList.remove('pipe-added'), { once: true });
+  }
 }
 
 function pipelineRemoveStep(id) {
@@ -2394,12 +2597,12 @@ function pipelineRender() {
 
   if (pipelineSteps.length === 0) {
     if (empty) empty.classList.remove('hidden');
-    note.classList.add('hidden');
+    if (note) note.classList.add('hidden');
     return;
   }
 
   if (empty) empty.classList.add('hidden');
-  note.classList.remove('hidden');
+  if (note) note.classList.remove('hidden');
 
   pipelineSteps.forEach((step, i) => {
     const def = PIPE_STEPS[step.type] || { name: step.type, icon: '⚙', desc: '' };
@@ -2421,60 +2624,63 @@ function pipelineRender() {
   });
 }
 
-function _pipelineReadConfig(type, extraCsv) {
-  /* Read current values from the existing step card inputs.
-     extraCsv: optional CSV path from a previous duplicates step (confirm mode). */
-  const musicRoot = document.getElementById('process-path')?.value.trim() || '';
+function _pipelineReadConfig(step, extraCsv) {
+  /* Read from wizard config inputs (wcfg-{stepId}-{field}).
+     step: full pipelineStep object {id, type} or legacy string type. */
+  const id   = (typeof step === 'object') ? step.id : null;
+  const type = (typeof step === 'object') ? step.type : step;
+  const get  = field => (id ? document.getElementById(`wcfg-${id}-${field}`)?.value?.trim() : '') || '';
+  const getN = (field, def) => parseInt((id ? document.getElementById(`wcfg-${id}-${field}`)?.value : '') || def);
+
   switch (type) {
     case 'audit':
-      return { root: document.getElementById('audit-root')?.value.trim() || '' };
+      return { root: get('root') };
     case 'import':
-      return { path: document.getElementById('import-path')?.value.trim() || musicRoot };
+      return { path: get('path') };
     case 'link':
-      return { path: document.getElementById('link-path')?.value.trim() || musicRoot };
+      return { path: get('path') };
     case 'organize':
       return {
-        sources:       Array.from(document.querySelectorAll('.org-source-input'))
-                         .map(i => i.value.trim()).filter(Boolean),
-        target:        document.getElementById('organize-target')?.value.trim()  || musicRoot,
-        mode:          document.getElementById('organize-mode')?.value || 'assimilate',
-        mix_threshold: document.getElementById('organize-mix-threshold')?.value  || '15',
-        workers:       parseInt(document.getElementById('organize-workers')?.value || '1'),
+        sources:       [get('source')].filter(Boolean),
+        target:        get('target'),
+        mode:          get('mode') || 'assimilate',
+        mix_threshold: get('mix_threshold') || '15',
+        workers:       getN('workers', 1),
       };
     case 'process':
       return {
-        path:         musicRoot,
-        workers:      parseInt(document.getElementById('normalize-workers')?.value || '1'),
+        path:         get('path'),
+        workers:      getN('workers', 1),
         no_normalize: true,
       };
     case 'normalize':
       return {
-        path:    musicRoot,
-        workers: parseInt(document.getElementById('normalize-workers')?.value || '1'),
+        path:    get('path'),
+        workers: getN('workers', 1),
       };
     case 'duplicates':
       return {
-        path:    document.getElementById('dupes-path')?.value.trim() || musicRoot,
-        workers: parseInt(document.getElementById('dupes-workers')?.value || '1'),
+        path:    get('path'),
+        workers: getN('workers', 1),
       };
     case 'prune':
       return extraCsv ? { csv: extraCsv } : {};
     case 'convert':
       return {
-        path:    document.getElementById('convert-path')?.value.trim() || musicRoot,
-        format:  document.getElementById('convert-format')?.value || 'aiff',
-        workers: parseInt(document.getElementById('convert-workers')?.value || '1'),
+        path:    get('path'),
+        format:  get('format') || 'aiff',
+        workers: getN('workers', 1),
       };
     case 'relocate':
       return {
-        old_root: document.getElementById('relocate-old')?.value.trim() || '',
-        new_root: document.getElementById('relocate-new')?.value.trim() || '',
+        old_root: get('old_root'),
+        new_root: get('new_root'),
       };
     case 'novelty':
       return {
-        source:  document.getElementById('novelty-source')?.value.trim() || '',
-        dest:    document.getElementById('novelty-dest')?.value.trim()   || '',
-        workers: 1,
+        source:  get('source'),
+        dest:    get('dest'),
+        workers: getN('workers', 1),
       };
     default:
       return {};
@@ -2540,7 +2746,7 @@ async function _runOnePipelineStep(step, dryRun, capturedCsv) {
   /* Returns {exitCode, reportPath, outputLines} */
   const stepWithCsv = {
     ...step,
-    config: _pipelineReadConfig(step.type, step.type === 'prune' ? capturedCsv : null),
+    config: (step.type === 'prune' && capturedCsv) ? { csv: capturedCsv } : (step.config || {}),
   };
   const resp = await fetch('/api/run/pipeline', {
     method:  'POST',
@@ -2595,15 +2801,14 @@ async function _runOnePipelineStep(step, dryRun, capturedCsv) {
   return { exitCode, reportPath, outputLines };
 }
 
-async function runPipeline() {
+async function runPipeline(dryRun = true, confirmMode = false) {
   if (pipelineSteps.length === 0) {
     alert('Add at least one step to the pipeline first.');
     return;
   }
   if (isRunning) return;
 
-  const dryRun       = document.getElementById('pipeline-dry-run').checked;
-  const confirmMode  = document.getElementById('pipeline-confirm-steps')?.checked ?? false;
+  /* dryRun and confirmMode are passed in from pipeWizRun() */
   const label        = dryRun ? 'Pipeline — Dry Run (preview only)' : 'Running Pipeline';
   const total        = pipelineSteps.length;
 
@@ -2709,7 +2914,7 @@ async function runPipeline() {
   const steps = pipelineSteps.map(s => ({
     type:   s.type,
     name:   (PIPE_STEPS[s.type] || {}).name || s.type,
-    config: _pipelineReadConfig(s.type),
+    config: s._config || {},
   }));
   let stepIdMap = {};
   pipelineSteps.forEach((s, i) => { stepIdMap[i + 1] = `pipe-step-${s.id}`; });
