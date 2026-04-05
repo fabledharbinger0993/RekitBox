@@ -1683,7 +1683,7 @@ body.log-open #pipeline-btn { bottom: calc(var(--log-h) + var(--scan-bar-h) + 28
 #pipeline-wizard-backdrop {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.75);
-  z-index: 1200;
+  z-index: 12000;
   display: flex; align-items: center; justify-content: center;
   padding: 20px;
 }
