@@ -20,6 +20,12 @@
 
 > **First launch** opens a Terminal window and automatically installs everything needed — Homebrew, `ffmpeg`, `chromaprint`, and all Python packages. This runs once and takes a few minutes. SuperBox opens in your browser when it's done.
 
+> **"SuperBox is damaged" or "cannot be opened"?** macOS quarantines apps downloaded from the internet. Open Terminal and run:
+> ```
+> xattr -cr ~/Downloads/SuperBox.app
+> ```
+> Then double-click again. Alternatively, right-click the app → **Open** → **Open Anyway**.
+
 ---
 
 ## What it does
