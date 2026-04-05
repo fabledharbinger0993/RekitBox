@@ -20,11 +20,12 @@
 
 > **First launch** opens a Terminal window and automatically installs everything needed — Homebrew, `ffmpeg`, `chromaprint`, and all Python packages. This runs once and takes a few minutes. SuperBox opens in your browser when it's done.
 
-> **"SuperBox is damaged" or "cannot be opened"?** macOS quarantines apps downloaded from the internet. Open Terminal and run:
-> ```
-> xattr -cr ~/Downloads/SuperBox.app
-> ```
-> Then double-click again. Alternatively, right-click the app → **Open** → **Open Anyway**.
+> **"SuperBox is damaged" or "cannot be opened"?** This is macOS Gatekeeper — it blocks apps that aren't signed with an Apple Developer certificate. To allow it:
+> 1. Go to **System Settings → Privacy & Security**
+> 2. Scroll down — you'll see *"SuperBox was blocked from use"*
+> 3. Click **Open Anyway**
+>
+> Alternatively, right-click the app → **Open** → **Open Anyway**.
 
 ---
 

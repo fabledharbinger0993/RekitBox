@@ -103,13 +103,13 @@ if [[ "$DO_RELEASE" == true ]]; then
 
 ## \"SuperBox is damaged\" or \"cannot be opened\"?
 
-macOS quarantines apps downloaded from the internet. Open Terminal and run:
+This is macOS Gatekeeper — it blocks apps that aren't signed with an Apple Developer certificate. To allow it:
 
-\`\`\`
-xattr -cr ~/Downloads/SuperBox.app
-\`\`\`
+1. Go to **System Settings → Privacy & Security**
+2. Scroll down — you'll see *\"SuperBox was blocked from use\"*
+3. Click **Open Anyway**
 
-Then double-click again. Alternatively, right-click the app → **Open** → **Open Anyway**."
+Alternatively, right-click the app → **Open** → **Open Anyway**."
 
   gh release create "$VERSION" "$ZIP_PATH" \
     --title "SuperBox $VERSION" \
