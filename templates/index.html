@@ -937,7 +937,7 @@
         <div class="pipe-col-label">Available steps — click to add</div>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('audit')" title="DB snapshot + full physical filesystem scan">
-          <span class="pipe-action-icon">▣</span>
+          <img src="/static/icon-audit.png" class="pipe-action-icon" alt="Library Audit">
           <span class="pipe-action-text">
             <strong>Library Audit</strong>
             <span>DB snapshot + physical filesystem inventory</span>
@@ -945,7 +945,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('process')" title="Write BPM and Key tags into every file">
-          <span class="pipe-action-icon">🏷</span>
+          <img src="/static/icon-tag.png" class="pipe-action-icon" alt="Tag Tracks">
           <span class="pipe-action-text">
             <strong>Tag Tracks</strong>
             <span>Writes BPM and musical key into each file</span>
@@ -953,7 +953,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('duplicates')" title="Find identical recordings no matter how they're named">
-          <span class="pipe-action-icon">🔎</span>
+          <img src="/static/icon-find-duplicate.png" class="pipe-action-icon" alt="Find Duplicates">
           <span class="pipe-action-text">
             <strong>Find Duplicates</strong>
             <span>Scans for files that are the same recording</span>
@@ -961,7 +961,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('prune')" title="Remove the copies confirmed in Find Duplicates">
-          <span class="pipe-action-icon">✂️</span>
+          <img src="/static/icon-prune.png" class="pipe-action-icon" alt="Prune Duplicates">
           <span class="pipe-action-text">
             <strong>Prune Duplicates</strong>
             <span>Remove copies found by Find Duplicates</span>
@@ -969,7 +969,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('relocate')" title="Update RekordBox after files have moved">
-          <span class="pipe-action-icon">📍</span>
+          <img src="/static/icon-move.png" class="pipe-action-icon" alt="Fix Broken Paths">
           <span class="pipe-action-text">
             <strong>Fix Broken Paths</strong>
             <span>Update RekordBox after files have moved</span>
@@ -977,7 +977,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('import')" title="Add new audio files into the RekordBox database">
-          <span class="pipe-action-icon">＋</span>
+          <img src="/static/icon-import.png" class="pipe-action-icon" alt="Import Tracks">
           <span class="pipe-action-text">
             <strong>Import Tracks</strong>
             <span>Add new audio files to RekordBox database</span>
@@ -985,7 +985,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('link')" title="Link imported tracks to playlists by folder name">
-          <span class="pipe-action-icon">🔗</span>
+          <img src="/static/icon-link.png" class="pipe-action-icon" alt="Link Playlists">
           <span class="pipe-action-text">
             <strong>Link Playlists</strong>
             <span>Connect tracks to playlists by folder name</span>
@@ -993,7 +993,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('normalize')" title="Re-encode tracks that are too loud or too quiet">
-          <span class="pipe-action-icon">📢</span>
+          <img src="/static/icon-normalize.png" class="pipe-action-icon" alt="Balance Loudness">
           <span class="pipe-action-text">
             <strong>Balance Loudness</strong>
             <span>Brings every track to the same volume level</span>
@@ -1001,7 +1001,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('convert')" title="Change every file to your chosen audio format">
-          <span class="pipe-action-icon">🔄</span>
+          <img src="/static/icon-convert.png" class="pipe-action-icon" alt="Convert Format">
           <span class="pipe-action-text">
             <strong>Convert Format</strong>
             <span>Changes files to AIFF, MP3, WAV, or FLAC</span>
@@ -1009,7 +1009,7 @@
         </button>
 
         <button class="pipe-action-btn" onclick="pipelineAddStep('organize')" title="Move files into Artist / Album / Track folders">
-          <span class="pipe-action-icon">🗂</span>
+          <img src="/static/icon-organizer.png" class="pipe-action-icon" alt="Organize Library">
           <span class="pipe-action-text">
             <strong>Organize Library</strong>
             <span>Moves files into Artist / Album / Track order</span>
@@ -2327,17 +2327,17 @@ function runConvert() {
 /* ── Pipeline Builder ──────────────────────────────────────────────────────── */
 
 const PIPE_STEPS = {
-  audit:      { name: 'Library Audit',      icon: '▣',   desc: 'DB snapshot + physical filesystem inventory' },
-  process:    { name: 'Tag Tracks',         icon: '🏷',  desc: 'Write BPM and Key into each file' },
-  duplicates: { name: 'Find Duplicates',    icon: '🔎',  desc: 'Scan for files that are the same recording' },
-  prune:      { name: 'Prune Duplicates',   icon: '✂️', desc: 'Remove copies found by Find Duplicates' },
-  relocate:   { name: 'Fix Broken Paths',   icon: '📍',  desc: 'Update RekordBox after files have moved' },
-  import:     { name: 'Import Tracks',      icon: '＋',  desc: 'Add new audio files to RekordBox database' },
-  link:       { name: 'Link Playlists',     icon: '🔗',  desc: 'Connect tracks to playlists by folder name' },
-  normalize:  { name: 'Balance Loudness',   icon: '📢',  desc: 'Bring every track to the same volume' },
-  convert:    { name: 'Convert Format',     icon: '🔄',  desc: 'Change files to AIFF, MP3, WAV, or FLAC' },
-  organize:   { name: 'Organize Library',   icon: '🗂',  desc: 'Move files into Artist / Album / Track' },
-  novelty:    { name: 'Novelty Scan',       icon: '★',   desc: 'Copy unique tracks from source to home library' },
+  audit:      { name: 'Library Audit',      icon: '/static/icon-audit.png',          desc: 'DB snapshot + physical filesystem inventory' },
+  process:    { name: 'Tag Tracks',         icon: '/static/icon-tag.png',            desc: 'Write BPM and Key into each file' },
+  duplicates: { name: 'Find Duplicates',    icon: '/static/icon-find-duplicate.png', desc: 'Scan for files that are the same recording' },
+  prune:      { name: 'Prune Duplicates',   icon: '/static/icon-prune.png',          desc: 'Remove copies found by Find Duplicates' },
+  relocate:   { name: 'Fix Broken Paths',   icon: '/static/icon-move.png',           desc: 'Update RekordBox after files have moved' },
+  import:     { name: 'Import Tracks',      icon: '/static/icon-import.png',         desc: 'Add new audio files to RekordBox database' },
+  link:       { name: 'Link Playlists',     icon: '/static/icon-link.png',           desc: 'Connect tracks to playlists by folder name' },
+  normalize:  { name: 'Balance Loudness',   icon: '/static/icon-normalize.png',      desc: 'Bring every track to the same volume' },
+  convert:    { name: 'Convert Format',     icon: '/static/icon-convert.png',        desc: 'Change files to AIFF, MP3, WAV, or FLAC' },
+  organize:   { name: 'Organize Library',   icon: '/static/icon-organizer.png',      desc: 'Move files into Artist / Album / Track' },
+  novelty:    { name: 'Novelty Scan',       icon: '/static/icon-novelty.png',        desc: 'Copy unique tracks from source to home library' },
 };
 
 const RECOMMENDED = ['process','duplicates','prune','relocate','import','link','organize'];
@@ -2401,7 +2401,7 @@ function pipelineRender() {
     el.innerHTML = `
       <div class="pipe-step-num">${i + 1}</div>
       <div class="pipe-step-body">
-        <div class="pipe-step-name">${def.icon} ${def.name}</div>
+        <div class="pipe-step-name"><img src="${def.icon}" style="width:16px;height:16px;object-fit:contain;vertical-align:middle;margin-right:5px">${def.name}</div>
         <div class="pipe-step-desc">${def.desc}</div>
       </div>
       <div class="pipe-step-controls">

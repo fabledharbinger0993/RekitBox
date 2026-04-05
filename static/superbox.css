@@ -378,7 +378,7 @@ details[open] > summary { color: var(--text); }
   border-color: var(--accent);
   background: var(--accent-dim);
 }
-.pipe-action-icon { font-size: 1.1rem; flex-shrink: 0; width: 24px; text-align: center; }
+.pipe-action-icon { flex-shrink: 0; width: 26px; height: 26px; object-fit: contain; display: block; }
 .pipe-action-text { display: flex; flex-direction: column; gap: 2px; }
 .pipe-action-text strong { font-size: .85rem; font-weight: 600; }
 .pipe-action-text span   { font-size: .75rem; color: var(--text-dim); }
