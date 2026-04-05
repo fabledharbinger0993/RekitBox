@@ -2381,18 +2381,18 @@ function pipelineRender() {
   const empty   = document.getElementById('pipe-empty-msg');
   const note    = document.getElementById('pipe-config-note');
 
+  // Remove only step elements — leave pipe-empty-msg in the DOM so getElementById finds it next time
+  queue.querySelectorAll('.pipe-step').forEach(el => el.remove());
+
   if (pipelineSteps.length === 0) {
-    queue.innerHTML = '';
-    queue.appendChild(empty);
-    empty.classList.remove('hidden');
+    if (empty) empty.classList.remove('hidden');
     note.classList.add('hidden');
     return;
   }
 
-  empty.classList.add('hidden');
+  if (empty) empty.classList.add('hidden');
   note.classList.remove('hidden');
 
-  queue.innerHTML = '';
   pipelineSteps.forEach((step, i) => {
     const def = PIPE_STEPS[step.type] || { name: step.type, icon: '⚙', desc: '' };
     const el  = document.createElement('div');
