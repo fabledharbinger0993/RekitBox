@@ -413,6 +413,27 @@ def api_pipeline():
             cmd = [sys.executable, str(CLI_PATH), "relocate",
                    cfg.get("old_root", ""), cfg.get("new_root", "")]
 
+        elif stype == "audit":
+            cmd = [sys.executable, str(CLI_PATH), "audit"]
+            if cfg.get("root"):
+                cmd += ["--root", cfg["root"]]
+
+        elif stype == "import":
+            cmd = [sys.executable, str(CLI_PATH), "import", cfg.get("path", "")]
+            if dry_run:
+                cmd.append("--dry-run")
+
+        elif stype == "link":
+            cmd = [sys.executable, str(CLI_PATH), "link", cfg.get("path", "")]
+
+        elif stype == "novelty":
+            cmd = [sys.executable, str(CLI_PATH), "novelty",
+                   cfg.get("source", ""), cfg.get("dest", "")]
+            if not dry_run:
+                cmd.append("--no-dry-run")
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+
         else:
             return jsonify({"error": f"Unknown step type: {stype}"}), 400
 

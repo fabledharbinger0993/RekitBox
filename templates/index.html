@@ -2462,6 +2462,12 @@ function _pipelineReadConfig(type, extraCsv) {
         old_root: document.getElementById('relocate-old')?.value.trim() || '',
         new_root: document.getElementById('relocate-new')?.value.trim() || '',
       };
+    case 'novelty':
+      return {
+        source:  document.getElementById('novelty-source')?.value.trim() || '',
+        dest:    document.getElementById('novelty-dest')?.value.trim()   || '',
+        workers: 1,
+      };
     default:
       return {};
   }
