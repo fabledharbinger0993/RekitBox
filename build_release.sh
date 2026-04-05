@@ -1,6 +1,10 @@
 #!/bin/bash
 # build_release.sh — builds the distributable SuperBox.app and uploads a new GitHub release.
 #
+# Uses a shell-script .app (not osacompile). A shell script as the MacOS
+# executable requires no code signature and runs correctly after a single
+# Gatekeeper approval — no "damaged" errors, no binary signing issues.
+#
 # What the generated .app does:
 #   First launch  → opens Terminal, git-clones the repo to ~/SuperBox/SuperBox,
 #                   then hands off to launch.sh (which runs setup.sh if needed)
@@ -16,6 +20,7 @@ REPO_URL="https://github.com/fabledharbinger0993/SuperBox.git"
 APP_NAME="SuperBox.app"
 ZIP_NAME="SuperBox.zip"
 BUILD_DIR="$(mktemp -d)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
 DO_RELEASE=false
@@ -27,48 +32,70 @@ done
 VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")"
 echo "Building $APP_NAME  version $VERSION"
 
-# ── Write the AppleScript ─────────────────────────────────────────────────────
-APPLESCRIPT=$(cat <<'APPLEEOF'
--- SuperBox bootstrap launcher
--- First run: clones the repo. Every run: starts the server.
-
-set homeDir to POSIX path of (path to home folder)
-set parentDir to homeDir & "SuperBox"
-set installDir to parentDir & "/SuperBox"
-set launchScript to installDir & "/launch.sh"
-set repoURL to "https://github.com/fabledharbinger0993/SuperBox.git"
-
--- Check whether SuperBox is already installed
-set isInstalled to false
-try
-	do shell script "test -d " & quoted form of installDir & "/.git"
-	set isInstalled to true
-end try
-
-if isInstalled then
-	-- Already installed: hand off to launch.sh (handles git pull + server start)
-	do shell script "bash " & quoted form of launchScript
-else
-	-- First install: open a Terminal window so the user can see git clone + setup progress
-	set cloneCmd to "mkdir -p " & quoted form of parentDir & " && git clone " & quoted form of repoURL & " " & quoted form of installDir & " && bash " & quoted form of launchScript
-	tell application "Terminal"
-		do script cloneCmd
-		activate
-	end tell
-end if
-APPLEEOF
-)
-
-# ── Compile .app ──────────────────────────────────────────────────────────────
+# ── Create .app bundle structure ──────────────────────────────────────────────
 APP_PATH="$BUILD_DIR/$APP_NAME"
-echo "$APPLESCRIPT" | osacompile -o "$APP_PATH" -
-echo "  ✓ Compiled $APP_NAME"
+mkdir -p "$APP_PATH/Contents/MacOS"
+mkdir -p "$APP_PATH/Contents/Resources"
 
-# ── Copy SuperBox icon onto the .app ─────────────────────────────────────────
-ICON_SRC="$(dirname "$0")/static/SRB_LOGO.png"
+# ── Write the launcher shell script ───────────────────────────────────────────
+cat > "$APP_PATH/Contents/MacOS/SuperBox" << LAUNCHER
+#!/bin/bash
+# SuperBox bootstrap launcher
+# First run: clones the repo. Every run: hands off to launch.sh.
+
+PARENT_DIR="\$HOME/SuperBox"
+INSTALL_DIR="\$PARENT_DIR/SuperBox"
+REPO_URL="$REPO_URL"
+
+if [ -d "\$INSTALL_DIR/.git" ]; then
+  # Already installed — hand off to launch.sh (handles git pull + server start)
+  bash "\$INSTALL_DIR/launch.sh"
+else
+  # First install — open Terminal so the user can see clone + setup progress
+  CLONE_CMD="mkdir -p '\$PARENT_DIR' && git clone '\$REPO_URL' '\$INSTALL_DIR' && bash '\$INSTALL_DIR/launch.sh'"
+  osascript -e "tell application \"Terminal\" to do script \"\$CLONE_CMD\""
+  osascript -e "tell application \"Terminal\" to activate"
+fi
+LAUNCHER
+chmod +x "$APP_PATH/Contents/MacOS/SuperBox"
+echo "  ✓ Launcher script written"
+
+# ── Write Info.plist ──────────────────────────────────────────────────────────
+cat > "$APP_PATH/Contents/Info.plist" << 'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>SuperBox</string>
+  <key>CFBundleIconFile</key>
+  <string>applet</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.guthrieentertainment.superbox</string>
+  <key>CFBundleName</key>
+  <string>SuperBox</string>
+  <key>CFBundleDisplayName</key>
+  <string>SuperBox</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>SuperBox uses Terminal to install dependencies and launch the server.</string>
+</dict>
+</plist>
+PLIST
+echo "  ✓ Info.plist written"
+
+# ── Apply SuperBox icon ───────────────────────────────────────────────────────
+ICON_SRC="$SCRIPT_DIR/static/SRB_LOGO.png"
 if [[ -f "$ICON_SRC" ]]; then
-  ICON_DEST="$APP_PATH/Contents/Resources/applet.icns"
-  # Convert PNG → ICNS using sips + iconutil
   ICONSET_DIR="$BUILD_DIR/superbox.iconset"
   mkdir -p "$ICONSET_DIR"
   for size in 16 32 64 128 256 512; do
@@ -76,16 +103,10 @@ if [[ -f "$ICON_SRC" ]]; then
     double=$((size * 2))
     sips -z $double $double "$ICON_SRC" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" &>/dev/null
   done
-  iconutil -c icns "$ICONSET_DIR" -o "$ICON_DEST" 2>/dev/null && echo "  ✓ Icon applied" || echo "  ⚠ Icon conversion failed — app will use default icon"
+  iconutil -c icns "$ICONSET_DIR" -o "$APP_PATH/Contents/Resources/applet.icns" 2>/dev/null \
+    && echo "  ✓ Icon applied" \
+    || echo "  ⚠ Icon conversion failed — app will use default icon"
 fi
-
-# ── Strip ad-hoc code signature ───────────────────────────────────────────────
-# osacompile signs the app with an ad-hoc signature. On macOS Sequoia+,
-# ad-hoc signed apps downloaded from the internet show "damaged and can't be
-# opened" with no recourse. Stripping the signature downgrades this to
-# "unidentified developer", which shows the Open Anyway button in
-# System Settings → Privacy & Security.
-codesign --remove-signature "$APP_PATH" 2>/dev/null && echo "  ✓ Ad-hoc signature stripped" || echo "  ⚠ Could not strip signature"
 
 # ── Package into SuperBox.zip ─────────────────────────────────────────────────
 ZIP_PATH="$(pwd)/$ZIP_NAME"
@@ -98,9 +119,15 @@ if [[ "$DO_RELEASE" == true ]]; then
   echo ""
   echo "Creating GitHub release $VERSION …"
 
-  RELEASE_NOTES="## Install
+  RELEASE_NOTES="## Download
 
-1. Download **SuperBox.zip** below
+**↓ Click SuperBox.zip below** — the two \"Source code\" files are auto-generated by GitHub and are not the app.
+
+---
+
+## Install
+
+1. Download **SuperBox.zip** above
 2. Unzip — you get **SuperBox.app**
 3. Move it to your Desktop or Applications folder
 4. Double-click to launch
@@ -109,7 +136,7 @@ if [[ "$DO_RELEASE" == true ]]; then
 
 > **Future launches** update SuperBox automatically — no manual downloads needed.
 
-## \"SuperBox is damaged\" or \"cannot be opened\"?
+## \"SuperBox can't be opened\"?
 
 This is macOS Gatekeeper — it blocks apps that aren't signed with an Apple Developer certificate. To allow it:
 
@@ -119,11 +146,11 @@ This is macOS Gatekeeper — it blocks apps that aren't signed with an Apple Dev
 
 Alternatively, right-click the app → **Open** → **Open Anyway**."
 
-  gh release create "$VERSION" "$ZIP_PATH" \
+  /opt/homebrew/bin/gh release create "$VERSION" "$ZIP_PATH" \
     --title "SuperBox $VERSION" \
     --notes "$RELEASE_NOTES" \
     --latest 2>/dev/null \
-    || gh release upload "$VERSION" "$ZIP_PATH" --clobber
+    || /opt/homebrew/bin/gh release upload "$VERSION" "$ZIP_PATH" --clobber
 
   echo "  ✓ Release $VERSION published"
   echo "  → https://github.com/fabledharbinger0993/SuperBox/releases/tag/$VERSION"
