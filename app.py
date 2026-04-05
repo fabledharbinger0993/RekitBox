@@ -21,6 +21,7 @@ import signal
 import subprocess
 import sys
 import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,21 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 app = Flask(__name__)
+
+# ── Homebrew update checker (background, weekly) ──────────────────────────────
+from brew_updater import start_background_checker as _start_brew_checker, \
+                         check_now as _brew_check_now, \
+                         get_status as _brew_get_status, \
+                         BREW_DEPS as _BREW_DEPS
+_start_brew_checker()
+
+from update_checker import start_background_checker as _start_update_checker, \
+                           get_status as _update_get_status
+_start_update_checker()
+
+# ── Active-process tracker (interrupt / emergency-stop) ───────────────────────
+_proc_lock: threading.Lock = threading.Lock()
+_active_proc: "subprocess.Popen | None" = None
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
@@ -96,13 +112,13 @@ def _stream(cmd: list[str]):
     """
     Generator that yields SSE-formatted lines from a subprocess.
     Each event is a JSON object:
-      {"line": "..."}               — a line of output
-      {"done": true, "exit_code": N} — command finished
+      {"line": "..."}          — a line of output
+      {"done": true, "exit_code": N}  — command finished
 
-    Also registers the Popen object in _scan_process so that the
-    /api/scan/interrupt and /api/scan/force-quit endpoints can signal it.
+    Registers the process in _active_proc so /api/cancel endpoints can
+    send signals to it mid-run.
     """
-    global _scan_process
+    global _active_proc
     try:
         process = subprocess.Popen(
             cmd,
@@ -113,17 +129,19 @@ def _stream(cmd: list[str]):
             cwd=str(REPO_ROOT),
             env=_subprocess_env(),
         )
-        with _scan_lock:
-            _scan_process = process
-        for line in iter(process.stdout.readline, ""):
-            yield f"data: {json.dumps({'line': line.rstrip()})}\n\n"
-        process.wait()
-        with _scan_lock:
-            _scan_process = None
-        yield f"data: {json.dumps({'done': True, 'exit_code': process.returncode})}\n\n"
+        with _proc_lock:
+            _active_proc = process
+        try:
+            for line in iter(process.stdout.readline, ""):
+                yield f"data: {json.dumps({'line': line.rstrip()})}\n\n"
+            process.wait()
+            yield f"data: {json.dumps({'done': True, 'exit_code': process.returncode})}\n\n"
+        finally:
+            with _proc_lock:
+                _active_proc = None
     except Exception as exc:
-        with _scan_lock:
-            _scan_process = None
+        with _proc_lock:
+            _active_proc = None
         yield f"data: {json.dumps({'line': f'[SERVER ERROR] {exc}', 'done': True, 'exit_code': 1})}\n\n"
 
 
@@ -133,6 +151,73 @@ def _sse_response(cmd: list[str]) -> Response:
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _stream_pipeline(steps: list[dict]):
+    """
+    Generator that runs a list of pipeline steps sequentially.
+    Each step dict has: {"name": str, "cmd": list[str]}
+    Some steps produce a SUPERBOX_REPORT_PATH that the next step may consume
+    (e.g. duplicates → prune). This is captured and injected as needed.
+
+    SSE events emitted beyond the normal {"line": "..."} stream:
+      {"step_start": N, "step_name": "...", "total_steps": N}
+      {"step_end": N, "step_name": "...", "exit_code": N}
+      {"done": true, "exit_code": 0}   — all steps complete
+      {"done": true, "exit_code": N, "failed_step": "..."} — step failed
+    """
+    global _active_proc
+    total = len(steps)
+    last_report_path: str | None = None   # passed from duplicates → prune
+
+    for idx, step in enumerate(steps, 1):
+        name = step["name"]
+        cmd  = list(step["cmd"])
+
+        # Inject the CSV from a previous duplicates step into prune
+        if step.get("needs_csv") and last_report_path:
+            cmd.append(last_report_path)
+
+        yield f"data: {json.dumps({'step_start': idx, 'step_name': name, 'total_steps': total})}\n\n"
+
+        exit_code = 0
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(REPO_ROOT),
+                env=_subprocess_env(),
+            )
+            with _proc_lock:
+                _active_proc = process
+            try:
+                for line in iter(process.stdout.readline, ""):
+                    stripped = line.rstrip()
+                    # Capture CSV path for downstream steps
+                    if stripped.startswith("SUPERBOX_REPORT_PATH: "):
+                        last_report_path = stripped[len("SUPERBOX_REPORT_PATH: "):]
+                    yield f"data: {json.dumps({'line': stripped})}\n\n"
+                process.wait()
+                exit_code = process.returncode
+            finally:
+                with _proc_lock:
+                    _active_proc = None
+        except Exception as exc:
+            with _proc_lock:
+                _active_proc = None
+            yield f"data: {json.dumps({'line': f'[SERVER ERROR] {exc}'})}\n\n"
+            exit_code = 1
+
+        yield f"data: {json.dumps({'step_end': idx, 'step_name': name, 'exit_code': exit_code})}\n\n"
+
+        if exit_code != 0:
+            yield f"data: {json.dumps({'done': True, 'exit_code': exit_code, 'failed_step': name})}\n\n"
+            return
+
+    yield f"data: {json.dumps({'done': True, 'exit_code': 0})}\n\n"
 
 
 def _require_rb_closed():
@@ -172,10 +257,12 @@ def api_config():
     """Expose the configured default paths so the UI can pre-fill forms."""
     try:
         from config import (  # noqa: PLC0415
-            DJMT_DB, MUSIC_ROOT,
+            DJMT_DB, MUSIC_ROOT, SKIP_DIRS,
             ARCHIVE_ROOT, SAVEPOINTS_DIR, QUARANTINE_DIR, REPORTS_DIR,
             ARCHIVE_ENABLED, _archive_mode, _custom_archive,
         )
+        from user_config import load_user_config as _luc  # noqa: PLC0415
+        _ucfg = _luc()
         return jsonify({
             "music_root":       str(MUSIC_ROOT),
             "djmt_db":          str(DJMT_DB),
@@ -186,6 +273,7 @@ def api_config():
             "archive_mode":     _archive_mode,
             "custom_archive":   _custom_archive,
             "archive_enabled":  ARCHIVE_ENABLED,
+            "excluded_dirs":    _ucfg.get("excluded_dirs", []),
             "configured":       True,
         })
     except Exception:
@@ -246,6 +334,161 @@ def api_process():
     return _sse_response(cmd)
 
 
+@app.route("/api/run/pipeline", methods=["POST"])
+def api_pipeline():
+    """
+    Execute a user-defined sequence of steps.
+    Body: {"dry_run": bool, "steps": [{"type": str, "config": {...}}, ...]}
+
+    Supported step types and their config keys:
+      organize   — source, target, mix_threshold, workers
+      process    — path, workers, no_bpm, no_key, force
+      normalize  — path, workers
+      duplicates — path, workers, output
+      prune      — (csv injected automatically from previous duplicates step)
+      convert    — path, format, workers
+      relocate   — old_root, new_root
+    """
+    body     = request.get_json(force=True, silent=True) or {}
+    dry_run  = bool(body.get("dry_run", True))
+    raw_steps = body.get("steps", [])
+
+    if not raw_steps:
+        return jsonify({"error": "steps list is required"}), 400
+
+    built: list[dict] = []
+
+    for s in raw_steps:
+        stype  = s.get("type", "")
+        cfg    = s.get("config", {})
+        name   = s.get("name", stype)
+
+        if stype == "organize":
+            src_list = cfg.get("sources") or [cfg.get("source", "")]
+            if isinstance(src_list, str):
+                src_list = [src_list]
+            cmd = [sys.executable, str(CLI_PATH), "organize",
+                   src_list[0], cfg.get("target", "")]
+            for extra in src_list[1:]:
+                if extra:
+                    cmd += ["--also-scan", extra]
+            if not dry_run:
+                cmd.append("--no-dry-run")
+            org_mode = cfg.get("mode", "assimilate")
+            if org_mode == "integrate":
+                cmd += ["--mode", "integrate"]
+            if cfg.get("mix_threshold"):
+                cmd += ["--mix-threshold", str(cfg["mix_threshold"])]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+
+        elif stype == "process":
+            cmd = [sys.executable, str(CLI_PATH), "process", cfg.get("path", "")]
+            if cfg.get("no_bpm"):   cmd.append("--no-bpm")
+            if cfg.get("no_key"):   cmd.append("--no-key")
+            if cfg.get("no_normalize"): cmd.append("--no-normalize")
+            if cfg.get("force"):    cmd.append("--force")
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+            if dry_run:             cmd.append("--dry-run")
+
+        elif stype == "normalize":
+            cmd = [sys.executable, str(CLI_PATH), "process", cfg.get("path", ""),
+                   "--no-bpm", "--no-key"]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+            if dry_run: cmd.append("--dry-run")
+
+        elif stype == "duplicates":
+            cmd = [sys.executable, str(CLI_PATH), "duplicates", cfg.get("path", "")]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+            if cfg.get("output"):
+                cmd += ["--output", cfg["output"]]
+
+        elif stype == "prune":
+            # CSV path injected at runtime from previous duplicates step output
+            cmd = [sys.executable, str(CLI_PATH), "prune"]
+            if dry_run: cmd.append("--dry-run")
+            built.append({"name": name, "cmd": cmd, "needs_csv": True})
+            continue
+
+        elif stype == "convert":
+            cmd = [sys.executable, str(CLI_PATH), "convert",
+                   cfg.get("path", ""), cfg.get("format", "aiff")]
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+
+        elif stype == "relocate":
+            cmd = [sys.executable, str(CLI_PATH), "relocate",
+                   cfg.get("old_root", ""), cfg.get("new_root", "")]
+
+        elif stype == "audit":
+            cmd = [sys.executable, str(CLI_PATH), "audit"]
+            if cfg.get("root"):
+                cmd += ["--root", cfg["root"]]
+
+        elif stype == "import":
+            cmd = [sys.executable, str(CLI_PATH), "import", cfg.get("path", "")]
+            if dry_run:
+                cmd.append("--dry-run")
+
+        elif stype == "link":
+            cmd = [sys.executable, str(CLI_PATH), "link", cfg.get("path", "")]
+
+        elif stype == "novelty":
+            cmd = [sys.executable, str(CLI_PATH), "novelty",
+                   cfg.get("source", ""), cfg.get("dest", "")]
+            if not dry_run:
+                cmd.append("--no-dry-run")
+            if cfg.get("workers", 1) > 1:
+                cmd += ["--workers", str(cfg["workers"])]
+
+        else:
+            return jsonify({"error": f"Unknown step type: {stype}"}), 400
+
+        built.append({"name": name, "cmd": cmd})
+
+    return Response(
+        _stream_pipeline(built),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/run/organize")
+def api_organize():
+    sources = [s.strip() for s in request.args.getlist("source") if s.strip()]
+    target  = request.args.get("target", "").strip()
+    if not sources or not target:
+        return jsonify({"error": "at least one source and a target are required"}), 400
+
+    cmd = [sys.executable, str(CLI_PATH), "organize", sources[0], target]
+    for extra in sources[1:]:
+        cmd += ["--also-scan", extra]
+
+    if request.args.get("no_dry_run") == "1":
+        cmd.append("--no-dry-run")
+
+    org_mode = request.args.get("mode", "assimilate").strip()
+    if org_mode == "integrate":
+        cmd += ["--mode", "integrate"]
+
+    workers = request.args.get("workers", "1").strip()
+    if workers.isdigit() and int(workers) > 1:
+        cmd += ["--workers", workers]
+
+    threshold = request.args.get("mix_threshold", "").strip()
+    if threshold:
+        try:
+            if float(threshold) > 0:
+                cmd += ["--mix-threshold", threshold]
+        except ValueError:
+            pass
+
+    return _sse_response(cmd)
+
+
 @app.route("/api/run/convert")
 def api_convert():
     path = request.args.get("path", "").strip()
@@ -254,6 +497,9 @@ def api_convert():
         return jsonify({"error": "path and format are required"}), 400
 
     cmd = [sys.executable, str(CLI_PATH), "convert", path, format_target]
+    workers = request.args.get("workers", "1").strip()
+    if workers.isdigit() and int(workers) > 1:
+        cmd += ["--workers", workers]
     return _sse_response(cmd)
 
 
@@ -309,6 +555,27 @@ def api_relocate():
     return _sse_response(cmd)
 
 
+@app.route("/api/run/novelty")
+def api_novelty():
+    sources = [s.strip() for s in request.args.getlist("source") if s.strip()]
+    dest    = request.args.get("dest", "").strip()
+    if not sources or not dest:
+        return jsonify({"error": "at least one source and a dest are required"}), 400
+
+    cmd = [sys.executable, str(CLI_PATH), "novelty", sources[0], dest]
+    for extra in sources[1:]:
+        cmd += ["--also-scan", extra]
+
+    if request.args.get("no_dry_run") == "1":
+        cmd.append("--no-dry-run")
+
+    workers = request.args.get("workers", "1").strip()
+    if workers.isdigit() and int(workers) > 1:
+        cmd += ["--workers", workers]
+
+    return _sse_response(cmd)
+
+
 @app.route("/api/run/duplicates")
 def api_duplicates():
     path = request.args.get("path", "").strip()
@@ -334,14 +601,53 @@ def api_duplicates():
 
 # ── Duplicate prune routes ────────────────────────────────────────────────────
 
+# Short-lived server-side store for prune path lists.
+# Avoids passing potentially thousands of paths as a query-string (which
+# exceeds waitress's 256 KB header limit on large libraries).
+_prune_token_store: dict[str, dict] = {}   # token → {paths, permanent}
+
+# Report cache: csv_path_str → {"groups": [...], "remove_paths": [...], "keep_paths": [...]}
+# Populated on first load, reused for pagination and Select All requests.
+_report_cache: dict[str, dict] = {}
+
+
+@app.route("/api/prune/stage", methods=["POST"])
+def api_prune_stage():
+    """
+    Accept a JSON body {"paths": [...], "permanent": false} and return a single-use token.
+    The token is consumed by GET /api/run/prune?token=<uuid>.
+    """
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        paths = data.get("paths", [])
+        if not isinstance(paths, list):
+            return jsonify({"error": "paths must be a list"}), 400
+        token = str(uuid.uuid4())
+        _prune_token_store[token] = {
+            "paths":     paths,
+            "permanent": bool(data.get("permanent", False)),
+        }
+        return jsonify({"token": token})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/duplicates/load")
 def api_duplicates_load():
     """
     Load a duplicate_report.csv, enrich with live disk + DB data,
-    and return structured JSON for the prune UI.
+    and return a paginated slice of groups for the prune UI.
     Falls back to the default report path if no csv_path is given.
+
+    Query params:
+      csv_path  — path to the CSV (optional)
+      page      — 0-based page index (default 0)
+      per_page  — groups per page (default 200)
     """
     csv_path_str = request.args.get("csv_path", "").strip()
+    page     = max(0, int(request.args.get("page",     0)))
+    per_page = max(1, int(request.args.get("per_page", 200)))
+
     csv_path = (
         Path(csv_path_str)
         if csv_path_str
@@ -351,40 +657,94 @@ def api_duplicates_load():
     if not csv_path.exists():
         return jsonify({"error": f"Report not found: {csv_path}"}), 404
 
+    cache_key = str(csv_path.resolve())
+
     try:
-        from pruner import load_report          # noqa: PLC0415
-        from db_connection import read_db       # noqa: PLC0415
-        from config import DJMT_DB as _DB      # noqa: PLC0415
+        if cache_key not in _report_cache:
+            from pruner import load_report          # noqa: PLC0415
+            from db_connection import read_db       # noqa: PLC0415
+            from config import DJMT_DB as _DB      # noqa: PLC0415
 
-        with read_db(_DB) as db:
-            groups = load_report(csv_path, db)
+            with read_db(_DB) as db:
+                groups = load_report(csv_path, db)
 
-        payload = [
-            {
-                "group_id": g.group_id,
-                "entries": [
-                    {
-                        "action":        e.action,
-                        "rank":          e.rank,
-                        "file_path":     e.file_path,
-                        "filename":      e.filename,
-                        "file_size_mb":  round(e.file_size_mb, 2),
-                        "bpm":           e.bpm,
-                        "key":           e.key,
-                        "format_ext":    e.format_ext,
-                        "format_tier":   e.format_tier,
-                        "exists_on_disk":e.exists_on_disk,
-                        "in_db":         e.in_db,
-                    }
-                    for e in g.entries
+            all_groups = [
+                {
+                    "group_id": g.group_id,
+                    "entries": [
+                        {
+                            "action":         e.action,
+                            "rank":           e.rank,
+                            "file_path":      e.file_path,
+                            "filename":       e.filename,
+                            "file_size_mb":   round(e.file_size_mb, 2),
+                            "bpm":            e.bpm,
+                            "key":            e.key,
+                            "format_ext":     e.format_ext,
+                            "format_tier":    e.format_tier,
+                            "exists_on_disk": e.exists_on_disk,
+                            "in_db":          e.in_db,
+                        }
+                        for e in g.entries
+                    ],
+                }
+                for g in groups
+            ]
+            _report_cache[cache_key] = {
+                "groups":       all_groups,
+                "remove_paths": [
+                    e["file_path"]
+                    for g in all_groups
+                    for e in g["entries"]
+                    if e["action"] == "REVIEW_REMOVE"
+                ],
+                "keep_paths": [
+                    e["file_path"]
+                    for g in all_groups
+                    for e in g["entries"]
+                    if e["action"] == "KEEP"
                 ],
             }
-            for g in groups
-        ]
-        return jsonify({"groups": payload, "csv_path": str(csv_path)})
+
+        cached      = _report_cache[cache_key]
+        all_groups  = cached["groups"]
+        total       = len(all_groups)
+        start       = page * per_page
+        page_groups = all_groups[start : start + per_page]
+
+        return jsonify({
+            "groups":        page_groups,
+            "total_groups":  total,
+            "total_remove":  len(cached["remove_paths"]),
+            "page":          page,
+            "per_page":      per_page,
+            "csv_path":      str(csv_path),
+        })
 
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/duplicates/remove-paths")
+def api_duplicates_remove_paths():
+    """
+    Return the full remove_paths and keep_paths lists for Select All operations.
+    The report must have been loaded via /api/duplicates/load first.
+    """
+    csv_path_str = request.args.get("csv_path", "").strip()
+    csv_path = (
+        Path(csv_path_str)
+        if csv_path_str
+        else Path.home() / "rekordbox-toolkit" / "duplicate_report.csv"
+    )
+    cache_key = str(csv_path.resolve())
+    if cache_key not in _report_cache:
+        return jsonify({"error": "Report not loaded — call /api/duplicates/load first"}), 400
+    cached = _report_cache[cache_key]
+    return jsonify({
+        "remove_paths": cached["remove_paths"],
+        "keep_paths":   cached["keep_paths"],
+    })
 
 
 @app.route("/api/open-file")
@@ -413,17 +773,17 @@ def api_open_file():
 def api_run_prune():
     """
     Execute a confirmed prune: remove DB entries + move files to Trash.
-    Accepts a JSON-encoded list of file paths as the `paths` query param.
+    Expects a ?token=<uuid> issued by POST /api/prune/stage.
     Returns an SSE stream of progress lines.
 
     All pre-flight checks run inside the worker so this endpoint always
     returns a valid SSE stream — never a bare JSON 4xx response that would
     confuse EventSource and surface only as a silent "Connection error".
     """
-    try:
-        paths: list[str] = json.loads(request.args.get("paths", "[]"))
-    except (json.JSONDecodeError, ValueError):
-        paths = []
+    token     = request.args.get("token", "")
+    staged    = _prune_token_store.pop(token, {})
+    paths: list[str] = staged.get("paths", [])
+    permanent: bool  = staged.get("permanent", False)
 
     log_q: queue.Queue = queue.Queue()
 
@@ -446,7 +806,8 @@ def api_run_prune():
             from config import DJMT_DB as _DB      # noqa: PLC0415
 
             with write_db(_DB) as db:
-                prune_files(paths, db, log=lambda m: log_q.put(("line", m)))
+                prune_files(paths, db, log=lambda m: log_q.put(("line", m)),
+                            permanent=permanent)
 
             log_q.put(("done", 0))
         except Exception as exc:
@@ -537,6 +898,8 @@ def api_settings():
             cfg["archive_mode"] = data["archive_mode"]
         if "custom_archive_dir" in data:
             cfg["custom_archive_dir"] = data["custom_archive_dir"]
+        if "excluded_dirs" in data:
+            cfg["excluded_dirs"] = [d for d in data["excluded_dirs"] if isinstance(d, str) and d.strip()]
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             _json.dump(cfg, f, indent=2)
         return jsonify({"ok": True, "note": "Restart SuperBox for changes to take effect."})
@@ -564,6 +927,73 @@ def api_audit_path_roots():
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ── Scan cancellation ─────────────────────────────────────────────────────────
+
+@app.route("/api/cancel", methods=["POST"])
+def api_cancel():
+    """Send SIGTERM to the active subprocess (graceful interrupt / checkpoint)."""
+    with _proc_lock:
+        proc = _active_proc
+    if proc is None:
+        return jsonify({"ok": False, "error": "No active scan"}), 404
+    proc.terminate()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/cancel/force", methods=["POST"])
+def api_cancel_force():
+    """Send SIGKILL to the active subprocess (emergency stop — server stays running)."""
+    with _proc_lock:
+        proc = _active_proc
+    if proc is None:
+        return jsonify({"ok": False, "error": "No active scan"}), 404
+    proc.kill()
+    return jsonify({"ok": True})
+
+
+# ── SuperBox update route ─────────────────────────────────────────────────────
+
+@app.route("/api/update/status")
+def api_update_status():
+    """Return the cached GitHub release check result (never blocks)."""
+    return jsonify(_update_get_status())
+
+
+# ── Homebrew update routes ────────────────────────────────────────────────────
+
+@app.route("/api/brew/status")
+def api_brew_status():
+    """Return the cached brew-outdated status (never blocks)."""
+    return jsonify(_brew_get_status())
+
+
+@app.route("/api/brew/check", methods=["POST"])
+def api_brew_check():
+    """Trigger an immediate brew-outdated check and return the result."""
+    status = _brew_check_now()
+    return jsonify(status)
+
+
+@app.route("/api/run/brew-upgrade")
+def api_brew_upgrade():
+    """
+    SSE stream of ``brew upgrade <packages>`` for the packages SuperBox uses.
+    Only upgrades known-outdated packages reported by the last cached check.
+    """
+    outdated = _brew_get_status().get("outdated", [])
+    names    = [p["name"] for p in outdated if p.get("name")]
+    if not names:
+        # Nothing to do — return an immediate SSE end event
+        def _nothing():
+            yield "data: No outdated SuperBox packages found.\n\n"
+            yield "data: [DONE]\n\n"
+        return Response(_nothing(), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    cmd = ["brew", "upgrade"] + names
+    return _sse_response(cmd)
 
 
 # ── Quit ──────────────────────────────────────────────────────────────────────

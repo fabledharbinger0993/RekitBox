@@ -11,6 +11,7 @@ Commands:
     relocate    Batch-update paths for moved/renamed files
     duplicates  Find acoustically identical files via Chromaprint
     process     Detect BPM/key and normalise loudness on audio files
+    organize    Consolidate files into Artist / Album / Track hierarchy
 
 All write commands enforce:
   - Rekordbox not running (via write_db())
@@ -36,7 +37,25 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
-# ─── Report file helper ───────────────────────────────────────────────────────
+# ─── Report helpers ───────────────────────────────────────────────────────────
+
+def _emit_report(text: str, subdir: str, filename: str) -> None:
+    """
+    Print a report so the UI can capture it, then save it to disk.
+
+    Protocol:
+      SUPERBOX_REPORT_BEGIN — UI starts capturing
+      <plain text lines>   — shown in terminal AND in the inline report card
+      SUPERBOX_REPORT_END  — UI stops capturing
+      SUPERBOX_REPORT_PATH: /path — UI stores the saved file path
+    """
+    print("SUPERBOX_REPORT_BEGIN", flush=True)
+    print(text, flush=True)
+    print("SUPERBOX_REPORT_END", flush=True)
+    report_path = _write_report(subdir, filename, text)
+    if report_path:
+        print(f"SUPERBOX_REPORT_PATH: {report_path}", flush=True)
+
 
 def _write_report(subdir: str, filename: str, text: str) -> str | None:
     """
@@ -199,25 +218,29 @@ def cmd_relocate(args: argparse.Namespace) -> None:
         if not r.success:
             failed += 1
 
-    print("═══ RELOCATION REPORT ═══")
-    print(f"  Total processed : {total}")
-    print(f"  Exact matches   : {by_strategy.get('exact', 0)}")
-    print(f"  Hash matches    : {by_strategy.get('hash', 0)}")
-    print(f"  Fuzzy matches   : {by_strategy.get('fuzzy', 0)}")
-    print(f"  Not found       : {by_strategy.get('not_found', 0)}")
-    print(f"  Write failures  : {failed}")
-    print("═════════════════════════")
+    not_found = by_strategy.get("not_found", 0)
+    updated   = total - not_found - failed
 
-    if by_strategy.get("not_found", 0) > 0:
-        log.warning(
-            "%d tracks could not be relocated — run audit to review",
-            by_strategy["not_found"],
-        )
+    lines = [f"Done updating RekordBox paths.", "", f"{updated} of {total} tracks were updated."]
+    if by_strategy.get("exact", 0):
+        lines.append(f"  {by_strategy['exact']} matched by exact path.")
+    if by_strategy.get("hash", 0):
+        lines.append(f"  {by_strategy['hash']} matched by file content.")
+    if by_strategy.get("fuzzy", 0):
+        lines.append(f"  {by_strategy['fuzzy']} matched by filename.")
+    if not_found:
+        lines += ["", f"{not_found} tracks couldn't be found at the new location.",
+                  "  Run Audit to see which ones and decide what to do."]
+    if failed:
+        lines += ["", f"{failed} tracks had write errors — check the log above."]
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _emit_report("\n".join(lines), "Relocate", f"relocate_{timestamp}.txt")
 
 
 def cmd_duplicates(args: argparse.Namespace) -> None:
     """Scan PATH for acoustically identical files and write a CSV report."""
-    from duplicate_detector import scan_duplicates, write_csv_report
+    from duplicate_detector import scan_duplicates, write_csv_report, write_trash_rescue_report
 
     root = Path(args.path)
     if not root.is_dir():
@@ -241,29 +264,68 @@ def cmd_duplicates(args: argparse.Namespace) -> None:
         except Exception:
             output = Path.home() / "rekordbox-toolkit" / "duplicate_report.csv"
 
+    rescue_output = output.with_name(
+        output.stem.replace("duplicate_report", "trash_rescue_report")
+        if "duplicate_report" in output.stem
+        else f"trash_rescue_{output.stem}"
+    ).with_suffix(".txt")
+
     workers = max(1, args.workers)
     log.info("Scanning for duplicates under: %s (workers=%d)", root, workers)
     log.info("This may take a while for large libraries — progress logged every %d files", 100)
 
     try:
-        groups = scan_duplicates(root, max_workers=workers)
+        result = scan_duplicates(root, max_workers=workers)
     except Exception:
         log.exception("Duplicate scan failed")
         sys.exit(1)
 
-    print(f"\n  Duplicate groups found : {len(groups)}")
-    print(f"  Files to review        : {sum(len(g.recommended_remove) for g in groups)}")
+    groups   = result.groups
+    removable = sum(len(g.recommended_remove) for g in groups)
+    trapped_keeps = sum(1 for g in groups if g.keep_in_trash)
 
-    if groups:
+    # ── Trash rescue warning ──────────────────────────────────────────────────
+    if result.unique_in_trash or trapped_keeps:
+        print()
+        print("  ╔══════════════════════════════════════════════════════════════╗")
+        print("  ║  !!! RESCUE REQUIRED — DO NOT CLEAR TRASH YET !!!           ║")
+        print("  ╠══════════════════════════════════════════════════════════════╣")
+        if result.unique_in_trash:
+            print(f"  ║  {len(result.unique_in_trash):>5} tracks exist ONLY in a trash folder            ║")
+            print(f"  ║        → NOT included in the pruning CSV                    ║")
+            print(f"  ║        → SuperBox does not offer an automated rescue step   ║")
+            print(f"  ║        → move these files manually before clearing trash    ║")
+        if trapped_keeps:
+            print(f"  ║  {trapped_keeps:>5} duplicate groups have their best copy in trash   ║")
+            print(f"  ║        → marked keep_in_trash=YES in the CSV                ║")
+            print(f"  ║        → pruner will NOT delete them, but manual trash      ║")
+            print(f"  ║          cleanup would — move them first                    ║")
+        print("  ╚══════════════════════════════════════════════════════════════╝")
+
+    if not groups and not result.unique_in_trash:
+        _emit_report(
+            "No duplicates found. Every file in this folder appears to be unique.",
+            "Duplicates", f"duplicates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        )
+    else:
+        lines = [
+            f"Found {len(groups)} groups of identical tracks — {removable} files could be removed.",
+            "Each group contains the same recording in different files.",
+            "A report has been saved so you can review each group before deleting anything.",
+        ]
         try:
-            write_csv_report(groups, output)
-            print(f"  Report written to      : {output}")
-            print(f"SUPERBOX_REPORT_PATH: {output}", flush=True)
+            if groups:
+                write_csv_report(result, output)
+                lines.append(f"\nReport saved to: {output}")
+            write_trash_rescue_report(result, rescue_output)
+            lines.append(f"Rescue report:   {rescue_output}")
         except Exception:
             log.exception("Failed to write CSV report")
             sys.exit(1)
-    else:
-        print("  No duplicates found.")
+        _emit_report("\n".join(lines), "Duplicates",
+                     f"duplicates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+        if groups:
+            print(f"SUPERBOX_REPORT_PATH: {output}", flush=True)
 
 
 def cmd_process(args: argparse.Namespace) -> None:
@@ -335,7 +397,7 @@ def cmd_process(args: argparse.Namespace) -> None:
             detect_key=detect_key,
             normalise=normalise,
             force=args.force,
-            skip_paths=skip_paths,
+            max_workers=max(1, args.workers),
         )
     except Exception:
         log.exception("Processing failed")
@@ -349,22 +411,43 @@ def cmd_process(args: argparse.Namespace) -> None:
     skipped_bpm = sum(1 for r in results if r.skipped_bpm)
     skipped_key = sum(1 for r in results if r.skipped_key)
 
-    report_lines = [
-        "═══ PROCESS REPORT ═══",
-        f"  Files processed : {total}",
-        f"  BPM written     : {bpm_written}  (skipped existing: {skipped_bpm})",
-        f"  Key written     : {key_written}  (skipped existing: {skipped_key})",
-        f"  Normalised      : {normalised}",
-        f"  Errors          : {errored}",
-        "══════════════════════",
-    ]
+    if normalise and not detect_bpm and not detect_key:
+        # Normalize-only mode
+        report_lines = [
+            f"\nDone.\n",
+            f"{normalised} tracks were re-encoded to match the loudness target.",
+            f"{total - normalised - errored} were already at the right level and skipped.",
+        ]
+        if errored:
+            report_lines.append(f"{errored} had errors — check the log above.")
+    elif normalise:
+        # Full process mode
+        report_lines = [
+            f"\nDone.\n",
+            f"{total} files were analyzed.",
+            f"  BPM written: {bpm_written} files.{f'  {skipped_bpm} already had one.' if skipped_bpm else ''}",
+            f"  Key written: {key_written} files.{f'  {skipped_key} already had one.' if skipped_key else ''}",
+            f"  Loudness adjusted: {normalised} files.",
+        ]
+        if errored:
+            report_lines.append(f"\n{errored} files had errors — check the log above.")
+    else:
+        # Tag-only mode
+        report_lines = [
+            f"\nDone tagging.\n",
+            f"{total} files were analyzed.",
+            f"  BPM written: {bpm_written} files.{f'  {skipped_bpm} already had one.' if skipped_bpm else ''}",
+            f"  Key written: {key_written} files.{f'  {skipped_key} already had one.' if skipped_key else ''}",
+        ]
+        if errored:
+            report_lines.append(f"\n{errored} files had errors — check the log above.")
+
     report_text = "\n".join(report_lines)
-    print(report_text)
-    # Write report to REPORTS_DIR/Tag Tracks/
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = _write_report("Tag Tracks", f"tag_tracks_{timestamp}.txt", report_text)
-    if report_path:
-        print(f"SUPERBOX_REPORT_PATH: {report_path}", flush=True)
+    if normalise:
+        _emit_report(report_text, "Normalize", f"normalize_{timestamp}.txt")
+    else:
+        _emit_report(report_text, "Tag Tracks", f"tag_tracks_{timestamp}.txt")
 
     if errored > 0:
         log.warning("%d files had errors — check log above", errored)
@@ -372,8 +455,11 @@ def cmd_process(args: argparse.Namespace) -> None:
 
 def cmd_convert(args: argparse.Namespace) -> None:
     """Convert audio files to target format (mp3, wav, aif, flac) recursively."""
+    import concurrent.futures
+    import json
     from pathlib import Path
     from audio_processor import _convert_file
+    from scanner import scan_directory
 
     root = Path(args.path)
     if not root.is_dir():
@@ -389,39 +475,251 @@ def cmd_convert(args: argparse.Namespace) -> None:
     if target_format == "aif":
         target_format = "aiff"
 
-    log.info("Converting audio files to %s in %s", target_format, root)
+    max_workers = max(1, getattr(args, "workers", 1))
+    log.info("Converting audio files to %s in %s (workers=%d)", target_format, root, max_workers)
 
-    # Find all audio files
-    extensions = {".mp3", ".wav", ".aiff", ".aif", ".flac", ".m4a", ".ogg", ".opus"}
-    files = [f for f in root.rglob("*") if f.is_file() and f.suffix.lower() in extensions]
+    tracks = list(scan_directory(root))
+    total = len(tracks)
 
-    log.info("Found %d audio files", len(files))
+    log.info("Found %d audio files", total)
 
-    if not files:
+    if not total:
         log.warning("No audio files found")
         return
 
+    done = 0
     success_count = 0
     error_count = 0
 
-    for i, fpath in enumerate(files, 1):
-        log.info("[%d/%d] Converting %s", i, len(files), fpath.name)
-        success, msg = _convert_file(fpath, target_format)
-        if success:
-            success_count += 1
-            log.info("✓ %s: %s", fpath.name, msg)
-        else:
-            error_count += 1
-            log.error("✗ %s: %s", fpath.name, msg)
+    def _emit_progress() -> None:
+        print(
+            "SUPERBOX_PROGRESS: " + json.dumps({
+                "done":      done,
+                "total":     total,
+                "remaining": total - done,
+                "converted": success_count,
+                "errors":    error_count,
+            }),
+            flush=True,
+        )
 
-    print("═══ CONVERT REPORT ═══")
-    print(f"  Files processed : {len(files)}")
-    print(f"  Converted       : {success_count}")
-    print(f"  Errors          : {error_count}")
-    print("══════════════════════")
+    def _convert_one(track) -> tuple[bool, str, str]:
+        ok, msg = _convert_file(track.path, target_format)
+        return ok, msg, track.path.name
+
+    _emit_progress()
+
+    if max_workers > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(_convert_one, track): track for track in tracks}
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    ok, msg, name = future.result()
+                except Exception as exc:
+                    ok, msg, name = False, str(exc), futures[future].path.name
+                done += 1
+                if ok:
+                    success_count += 1
+                    log.info("✓ %s: %s", name, msg)
+                else:
+                    error_count += 1
+                    log.error("✗ %s: %s", name, msg)
+                _emit_progress()
+    else:
+        for i, track in enumerate(tracks):
+            log.info("[%d/%d] Converting %s", i + 1, total, track.path.name)
+            ok, msg = _convert_file(track.path, target_format)
+            done += 1
+            if ok:
+                success_count += 1
+                log.info("✓ %s: %s", track.path.name, msg)
+            else:
+                error_count += 1
+                log.error("✗ %s: %s", track.path.name, msg)
+            _emit_progress()
+
+    fmt_upper = target_format.upper()
+    lines = [f"Done converting.", "", f"{success_count} of {total} files were converted to {fmt_upper}."]
+    if error_count:
+        lines.append(f"{error_count} files had errors — check the log above.")
+    else:
+        lines.append("No errors.")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _emit_report("\n".join(lines), "Convert", f"convert_{timestamp}.txt")
 
     if error_count > 0:
         log.warning("%d files had errors — check log above", error_count)
+
+
+def cmd_organize(args: argparse.Namespace) -> None:
+    """Consolidate audio files into Artist / Album / Track hierarchy."""
+    import json as _json
+    from pathlib import Path
+    from library_organizer import organize_library, MIX_FOLDER, ORPHAN_FOLDER
+
+    primary = Path(args.source)
+    extra   = [Path(p) for p in (getattr(args, "also_scan", None) or [])]
+    sources = [primary] + extra
+    target  = Path(args.target)
+    mode    = getattr(args, "mode", "assimilate")
+
+    for s in sources:
+        if not s.is_dir():
+            log.error("SOURCE is not a directory: %s", s)
+            sys.exit(1)
+    if not target.is_dir():
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            log.info("Created target directory: %s", target)
+        except OSError as e:
+            log.error("Cannot create target directory %s: %s", target, e)
+            sys.exit(1)
+
+    dry_run     = not args.no_dry_run
+    max_workers = max(1, getattr(args, "workers", 1))
+    threshold   = float(getattr(args, "mix_threshold", 15)) * 60.0
+
+    if dry_run:
+        log.info("DRY RUN — no files will be touched. Pass --no-dry-run to execute.")
+
+    verb = "copy" if mode == "integrate" else "move"
+    log.info(
+        "Organizing  sources=%s  target=%s  mode=%s  dry_run=%s  workers=%d  mix_threshold=%.0f min",
+        [str(s) for s in sources], target, mode, dry_run, max_workers, threshold / 60,
+    )
+
+    results = organize_library(
+        sources, target,
+        mode=mode,
+        dry_run=dry_run,
+        max_workers=max_workers,
+        mix_threshold_sec=threshold,
+    )
+
+    moved     = sum(1 for r in results if r.action in ("moved", "dry_run", "conflict_renamed"))
+    skipped   = sum(1 for r in results if r.action == "skipped")
+    conflicts = sum(1 for r in results if r.action == "conflict_renamed")
+    errors    = sum(1 for r in results if r.action == "error")
+
+    src_desc = str(sources[0]) if len(sources) == 1 else f"{len(sources)} source folders"
+    action_verb = "copied" if mode == "integrate" else "moved"
+
+    if dry_run:
+        dry_verb = "copy" if mode == "integrate" else "move"
+        mode_note = (
+            "Integration mode — files will be copied to the target; the source drive stays untouched."
+            if mode == "integrate" else
+            "Assimilation mode — files will be moved and the source will be cleaned up."
+        )
+        lines = [
+            "Here's what would change.",
+            "",
+            f"{len(results)} files scanned across {src_desc}.",
+            f"Mode: {mode_note}",
+        ]
+        if moved:
+            lines.append(f"  {moved} would be {dry_verb}ed into Artist / Album / Track folders.")
+        if skipped:
+            lines.append(f"  {skipped} are exact copies already at the destination — they'd be skipped.")
+        if conflicts:
+            lines.append(f"  {conflicts} have a name clash — they'd be renamed (e.g. track_1.mp3).")
+        if errors:
+            lines.append(f"  {errors} had errors — check the log above.")
+        lines += ["", f"Nothing has been {dry_verb}ed. Uncheck \"Dry Run\" and run again to execute."]
+    else:
+        lines = ["Done organizing.", ""]
+        if moved:
+            lines.append(f"{moved} files were {action_verb} into Artist / Album / Track folders.")
+        if skipped:
+            lines.append(f"{skipped} were already at the destination — left alone.")
+        if conflicts:
+            lines.append(f"{conflicts} name clashes were handled by renaming (e.g. track_1.mp3).")
+        if errors:
+            lines.append(f"{errors} files had errors — check the log above.")
+        else:
+            lines.append("No errors.")
+        if mode == "integrate":
+            lines.append("Source folders were not modified.")
+        else:
+            lines.append("Empty source folders were cleaned up.")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _emit_report("\n".join(lines), "Organize", f"organize_{timestamp}.txt")
+
+    if dry_run:
+        # Emit planned moves so the UI/log shows what would happen
+        for r in results:
+            if r.action == "dry_run":
+                log.info("PLAN  %s  →  %s", r.src.name, r.reason)
+
+    if errors > 0:
+        log.warning("%d files had errors — check log above", errors)
+
+
+def cmd_novelty(args: argparse.Namespace) -> None:
+    """Find tracks that only exist on the source and copy them to the destination."""
+    from pathlib import Path
+    from novelty_scanner import scan_novel
+
+    primary = Path(args.source)
+    extra   = [Path(p) for p in (getattr(args, "also_scan", None) or [])]
+    sources = [primary] + extra
+    dest    = Path(args.dest)
+    dry_run = not args.no_dry_run
+
+    for s in sources:
+        if not s.is_dir():
+            log.error("SOURCE is not a directory: %s", s)
+            sys.exit(1)
+    if not dest.is_dir():
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Cannot create destination %s: %s", dest, e)
+            sys.exit(1)
+
+    max_workers = max(1, getattr(args, "workers", 1))
+
+    if dry_run:
+        log.info("DRY RUN — no files will be copied. Pass --no-dry-run to execute.")
+
+    log.info(
+        "Novel scan  sources=%s  dest=%s  dry_run=%s  workers=%d",
+        [str(s) for s in sources], dest, dry_run, max_workers,
+    )
+
+    result = scan_novel(
+        sources, dest,
+        dry_run=dry_run,
+        max_workers=max_workers,
+    )
+
+    novel   = len(result.novel)
+    present = len(result.present)
+    errors  = len(result.errors)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    verb = "would be copied" if dry_run else "copied"
+
+    lines = [
+        "Novel Track Scan complete.",
+        "",
+        f"{result.total_src} tracks scanned on source.",
+        f"Destination index: {result.dest_index_size} tracks.",
+        "",
+    ]
+    if novel:
+        lines.append(f"  {novel} novel tracks {verb} to destination.")
+    if present:
+        lines.append(f"  {present} tracks confirmed already present — skipped.")
+    if errors:
+        lines.append(f"  {errors} errors — check log above.")
+    if dry_run:
+        lines += ["", "Nothing has been copied. Uncheck \"Dry Run\" and run again to execute."]
+
+    _emit_report("\n".join(lines), "Novelty Scan", f"novelty_{timestamp}.txt")
+
+    if errors > 0:
+        log.warning("%d files had errors — check log above", errors)
 
 
 # ─── Argument parser ──────────────────────────────────────────────────────────
@@ -552,6 +850,11 @@ Examples:
             "Use this to continue an interrupted scan without re-processing "
             "files that were already completed."
         ),
+        "--workers", "-w",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Parallel ffmpeg workers for loudness measurement/normalisation (default: 1)",
     )
     p_process.set_defaults(func=cmd_process)
 
@@ -566,7 +869,106 @@ Examples:
         metavar="FORMAT",
         help="Target format: mp3, wav, aif, or flac",
     )
+    p_convert.add_argument(
+        "--workers", "-w",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Parallel ffmpeg workers for conversion (default: 1)",
+    )
     p_convert.set_defaults(func=cmd_convert)
+
+    # ── organize ──
+    p_organize = sub.add_parser(
+        "organize",
+        help="Consolidate files into Artist / Album / Track hierarchy",
+    )
+    p_organize.add_argument(
+        "source",
+        metavar="SOURCE",
+        help="Directory to scan for audio files",
+    )
+    p_organize.add_argument(
+        "target",
+        metavar="TARGET",
+        help="Root of the organised library (e.g. /Volumes/DJMT/DJMT PRIMARY)",
+    )
+    p_organize.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        default=False,
+        help="Actually move files. Default behaviour is dry-run (preview only).",
+    )
+    p_organize.add_argument(
+        "--workers", "-w",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Parallel I/O workers for the move phase (default: 1)",
+    )
+    p_organize.add_argument(
+        "--mix-threshold",
+        metavar="MINUTES",
+        type=float,
+        default=15.0,
+        help="Tracks at or above this duration (minutes) go to Live Sets & Mixes (default: 15)",
+    )
+    p_organize.add_argument(
+        "--also-scan",
+        metavar="PATH",
+        action="append",
+        default=[],
+        dest="also_scan",
+        help="Additional source directory to scan (can be repeated for multiple sources)",
+    )
+    p_organize.add_argument(
+        "--mode",
+        choices=["assimilate", "integrate"],
+        default="assimilate",
+        help=(
+            "assimilate: move files, remove source duplicates, prune empty dirs (default). "
+            "integrate: copy files to target only — source drive is never modified."
+        ),
+    )
+    p_organize.set_defaults(func=cmd_organize)
+
+    # ── novelty ───────────────────────────────────────────────────────────────
+    p_novelty = sub.add_parser(
+        "novelty",
+        help="Find and copy tracks that exist only on the source (not in destination)",
+    )
+    p_novelty.add_argument(
+        "source",
+        metavar="SOURCE",
+        help="Drive or directory to scan for novel tracks",
+    )
+    p_novelty.add_argument(
+        "dest",
+        metavar="DEST",
+        help="Home library root to copy novel tracks into",
+    )
+    p_novelty.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        default=False,
+        help="Actually copy files. Default is dry-run (preview only).",
+    )
+    p_novelty.add_argument(
+        "--workers", "-w",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Parallel workers (default: 1)",
+    )
+    p_novelty.add_argument(
+        "--also-scan",
+        metavar="PATH",
+        action="append",
+        default=[],
+        dest="also_scan",
+        help="Additional source directory (can be repeated)",
+    )
+    p_novelty.set_defaults(func=cmd_novelty)
 
     return parser
 

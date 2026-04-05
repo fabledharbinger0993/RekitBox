@@ -43,6 +43,19 @@ from config import AUDIO_EXTENSIONS, BPM_MAX, BPM_MIN, LUFS_TOLERANCE, TARGET_LU
 
 log = logging.getLogger(__name__)
 
+# Resolve ffmpeg once at import time — on macOS with Homebrew the server process
+# may not inherit the shell PATH, so we fall back to common install locations.
+def _find_ffmpeg() -> str:
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    for candidate in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+        if Path(candidate).exists():
+            return candidate
+    return "ffmpeg"  # last resort — will surface a clear FileNotFoundError if absent
+
+_FFMPEG = _find_ffmpeg()
+
 ANALYSIS_DURATION: float = 90.0
 LIBROSA_TO_CAMELOT: dict[str, str] = {
     "Amin": "8A", "Emin": "9A", "Bmin": "10A", "F#min": "11A", "C#min": "12A",
@@ -112,12 +125,12 @@ def _detect_key(path: Path) -> str | None:
         y, sr = librosa.load(str(path), duration=ANALYSIS_DURATION, mono=True)
         chroma = librosa.feature.chroma_cqt(y=y, sr=sr).mean(axis=1)
         scores: dict[str, float] = {}
-        for i, note in enumerate(_NOTES):
+        for i, note in enumerate(NOTES):
             rolled = np.roll(chroma, -i)
-            scores[note + "maj"] = float(np.corrcoef(rolled, _KS_MAJOR)[0, 1])
-            scores[note + "min"] = float(np.corrcoef(rolled, _KS_MINOR)[0, 1])
+            scores[note + "maj"] = float(np.corrcoef(rolled, KS_MAJOR)[0, 1])
+            scores[note + "min"] = float(np.corrcoef(rolled, KS_MINOR)[0, 1])
         best = max(scores, key=scores.get)  # type: ignore[arg-type]
-        camelot = _LIBROSA_TO_CAMELOT.get(best)
+        camelot = LIBROSA_TO_CAMELOT.get(best)
         if camelot is None:
             log.warning("No Camelot mapping for detected key %r", best)
             return None
@@ -131,32 +144,33 @@ def _detect_key(path: Path) -> str | None:
 # ─── Loudness measurement ─────────────────────────────────────────────────────
 
 def _measure_lufs(path: Path) -> float | None:
-    """Measure integrated loudness (LUFS) via ffmpeg's ebur128 filter.
-
-    Streams the file — no audio data is loaded into RAM, and no
-    scipy/pyloudnorm dependency is required.
+    """
+    Measure integrated loudness via ffmpeg's loudnorm filter (EBU R128).
+    Uses a subprocess so memory use is bounded regardless of file size, and
+    avoids the scipy circular-import problem on Python 3.12+.
     """
     try:
         cmd = [
-            "ffmpeg", "-nostdin", "-i", str(path),
-            "-af", "ebur128=framelog=quiet",
+            _FFMPEG, "-hide_banner",
+            "-i", str(path),
+            "-af", "loudnorm=print_format=json",
             "-f", "null", "-",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        # ebur128 summary appears in stderr; scan from the end for the I: line.
-        for line in reversed(result.stderr.splitlines()):
-            stripped = line.strip()
-            if stripped.startswith("I:") and "LUFS" in stripped:
-                # format: "    I:     -14.3 LUFS"
-                parts = stripped.split()
-                # parts[0] == "I:", parts[1] == "-14.3", parts[2] == "LUFS"
-                if len(parts) >= 2:
-                    try:
-                        return round(float(parts[1]), 2)
-                    except ValueError:
-                        pass
-        log.warning("ebur128: no LUFS summary found in ffmpeg output for %s", path.name)
-        return None
+        # loudnorm prints its JSON summary to stderr after the last '{'
+        idx = result.stderr.rfind("{")
+        if idx == -1:
+            log.warning("No loudnorm JSON in ffmpeg output for %s", path.name)
+            return None
+        end = result.stderr.find("}", idx)
+        if end == -1:
+            return None
+        data = json.loads(result.stderr[idx : end + 1])
+        lufs = float(data["input_i"])
+        if not np.isfinite(lufs):
+            log.warning("Non-finite LUFS for %s (silent file?)", path.name)
+            return None
+        return round(lufs, 2)
     except Exception as e:
         log.error("Loudness measurement failed for %s: %s", path.name, e)
         return None
@@ -201,7 +215,7 @@ def _normalise_file(path: Path, gain_db: float) -> bool:
     try:
         codec_args = _get_ffmpeg_codec_args(path)
         cmd = [
-            "ffmpeg", "-y", "-i", str(path),
+            _FFMPEG, "-y", "-i", str(path),
             "-af", f"volume={gain_db:.4f}dB",
             *codec_args,
             "-map_metadata", "0",
@@ -213,14 +227,15 @@ def _normalise_file(path: Path, gain_db: float) -> bool:
             log.error("ffmpeg failed for %s:\n%s", path.name, result.stderr[-500:])
             return False
 
-        # Verify the output has non-zero frames using the header only (no RAM load).
+        # Verify the output without loading audio into RAM — sf.info() reads
+        # only the file header, so large files don't cause a memory spike.
         try:
             verify_info = sf.info(str(tmp_path))
-            if verify_info.frames == 0:
-                log.error("ffmpeg output is empty (zero samples) for %s", path.name)
-                return False
         except Exception as verify_err:
             log.error("Could not verify ffmpeg output for %s: %s", path.name, verify_err)
+            return False
+        if verify_info.frames == 0:
+            log.error("ffmpeg output is empty (zero frames) for %s", path.name)
             return False
 
         shutil.move(str(path), str(bak))
@@ -299,7 +314,7 @@ def _convert_file(path: Path, target_format: str) -> tuple[bool, str]:
             codec_args = ["-codec:a", "flac", "-compression_level", "8"]
 
         cmd = [
-            "ffmpeg", "-y", "-i", str(path),
+            _FFMPEG, "-y", "-i", str(path),
             *codec_args,
             "-map_metadata", "0",
             "-id3v2_version", "3",
@@ -309,13 +324,13 @@ def _convert_file(path: Path, target_format: str) -> tuple[bool, str]:
         if result.returncode != 0:
             return False, f"ffmpeg failed: {result.stderr[-200:]}"
 
-        # Verify output has non-zero frames using the header only (no RAM load).
+        # Verify output without loading into RAM
         try:
             verify_info = sf.info(str(tmp_path))
-            if verify_info.frames == 0:
-                return False, "ffmpeg output is empty (zero samples)"
         except Exception as verify_err:
             return False, f"Could not verify ffmpeg output: {verify_err}"
+        if verify_info.frames == 0:
+            return False, "ffmpeg output is empty (zero frames)"
 
         # Move original to .bak, new to path
         shutil.move(str(path), str(bak))
@@ -557,7 +572,7 @@ def process_directory(
                 tags_written += 1
         elif r.ok:
             clean += 1
-        # Build scan index entry — duration via sf.info (header only, no RAM load).
+n        # Build scan index entry — duration via soundfile header (fast, no decode)
         try:
             duration_sec = round(sf.info(str(r.path)).duration, 1)
         except Exception:

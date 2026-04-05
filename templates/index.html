@@ -1365,6 +1365,8 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
 }
 #settings-btn:hover { background: var(--surface-hi); border-color: var(--accent); color: var(--accent); }
 </style>
+<link rel="stylesheet" href="/static/superbox.css">
+<link rel="icon" type="image/png" href="/static/SRB_LOGO.png">
 </head>
 <body>
 
@@ -1405,49 +1407,72 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
   </div>
 </header>
 
+<!-- ══ SuperBox update banner ═══════════════════════════════════════════════ -->
+<div id="superbox-update-banner">
+  <span class="brew-icon">⬆</span>
+  <span class="brew-msg" id="superbox-update-msg">A new version of SuperBox is available.</span>
+  <a id="superbox-update-link" href="#" target="_blank" rel="noopener" class="brew-btn" style="text-decoration:none">Download</a>
+  <button class="brew-dismiss" onclick="superboxUpdateDismiss()" title="Dismiss">✕</button>
+</div>
+
+<!-- ══ Brew update banner ═══════════════════════════════════════════════════ -->
+<div id="brew-banner">
+  <span class="brew-icon">🍺</span>
+  <span class="brew-msg" id="brew-msg">Homebrew updates available.</span>
+  <button class="brew-btn" onclick="runBrewUpgrade()">Update Now</button>
+  <button class="brew-link" onclick="brewCheckNow()">Check Again</button>
+  <button class="brew-dismiss" onclick="brewDismiss()" title="Dismiss until next check">✕</button>
+</div>
+
 <!-- ══ Workflow rail ════════════════════════════════════════════════════════ -->
 <nav class="workflow-rail" id="workflow-rail">
   <button class="step-tab active" data-target="step-audit">
-    <span class="step-num">1</span> Audit
+    <span class="step-num">▣</span> Library Audit
   </button>
   <button class="step-tab" data-target="step-process">
-    <span class="step-num">2</span> Tag Tracks
-  </button>
-  <button class="step-tab" data-target="step-import">
-    <span class="step-num">3</span> Import
-  </button>
-  <button class="step-tab" data-target="step-link">
-    <span class="step-num">4</span> Link Playlists
-  </button>
-  <button class="step-tab" data-target="step-normalize">
-    <span class="step-num">5</span> Normalize
+    <span class="step-num">🏷</span> Tag Tracks
   </button>
   <button class="step-tab" data-target="step-duplicates">
-    <span class="step-num">⊕</span> Duplicates
+    <span class="step-num">🔎</span> Find Duplicates
   </button>
   <button class="step-tab" data-target="step-prune">
-    <span class="step-num">⊕</span> Prune
+    <span class="step-num">✂</span> Prune
   </button>
   <button class="step-tab" data-target="step-relocate">
-    <span class="step-num">⊕</span> Relocate
+    <span class="step-num">📍</span> Relocate
+  </button>
+  <button class="step-tab" data-target="step-import">
+    <span class="step-num">＋</span> Import
+  </button>
+  <button class="step-tab" data-target="step-link">
+    <span class="step-num">🔗</span> Link Playlists
+  </button>
+  <button class="step-tab" data-target="step-normalize">
+    <span class="step-num">📢</span> Normalize
   </button>
   <button class="step-tab" data-target="step-convert">
-    <span class="step-num">⊕</span> Convert
+    <span class="step-num">🔄</span> Convert
+  </button>
+  <button class="step-tab" data-target="step-organize">
+    <span class="step-num">🗂</span> Organize
+  </button>
+  <button class="step-tab" data-target="step-novelty">
+    <span class="step-num">★</span> Novelty
   </button>
 </nav>
 
 <!-- ══ Main ════════════════════════════════════════════════════════════════ -->
 <main>
 
-  <p class="section-title">Recommended Workflow — run in order when adding new music</p>
+  <p class="section-title">Core Pipeline — each tool feeds the next</p>
 
-  <!-- ── Step 1: Audit ──────────────────────────────────────────────────── -->
-  <div class="card" id="step-audit">
+    <!-- ── Step 1: Audit ──────────────────────────────────────────────────── -->
+  <div class="card" id="step-audit" style="--card-watermark:url('/static/icon-audit.png')">
     <div class="card-head">
       <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Audit"></div>
       <div class="card-meta">
-        <div class="card-title">Step 1 — Audit Your Library</div>
-        <div class="card-blurb">Before touching anything, get a snapshot of what's already broken. This is read-only — safe to run even with RekordBox open.</div>
+        <div class="card-title">Library Audit — Database &amp; Physical Scan</div>
+        <div class="card-blurb">Two simultaneous passes: a <strong>database audit</strong> (track counts, tag coverage, missing paths, dead drives) and a <strong>physical library scan</strong> (every file on disk, size, format breakdown, orphans, trash-adjacent files). Read-only — safe to run with RekordBox open.</div>
       </div>
       <span class="risk-badge safe">Read-Only</span>
     </div>
@@ -1479,7 +1504,7 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
       <strong style="color:var(--danger);">⚠ Disconnected drive detected</strong>
       <div id="dead-roots-detail" style="margin-top:6px; color:var(--text-muted); line-height:1.6;"></div>
       <div style="margin-top:8px; font-size:.78rem; color:var(--text-dim);">
-        The Relocate step has been pre-filled with these paths. Run Audit first, then go to Relocate to fix them.
+        These dead roots have been pre-filled in <strong>Relocate — Fix Broken Paths</strong> below. Run that step next.
       </div>
     </div>
 
@@ -1488,26 +1513,32 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
         <label>Music Root (optional — for orphan scan)</label>
         <input type="text" id="audit-root" placeholder="Leave blank to use default from config.py">
       </div>
+      <div class="field">
+        <div class="checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="audit-save-physical" checked>
+            Save physical scan report (JSON) — used by Organize, Novelty Scanner &amp; Duplicates
+          </label>
+        </div>
+      </div>
       <div class="btn-row">
         <button class="btn btn-neon" onclick="runAudit()">Execute Audit</button>
         <div class="scan-controls" id="ctrl-audit">
           <button class="btn btn-scan-cp" data-scan-ctrl onclick="checkpointScan()">⏸ Checkpoint</button>
           <button class="btn btn-scan-kill" data-scan-ctrl onclick="forceStopScan()">⊗ Force Stop</button>
         </div>
+        <button class="btn btn-neon" onclick="runAudit()">Run Library Audit</button>
       </div>
-    </div>
-    <div id="audit-result" class="report-card hidden">
-      <div class="report-card-label">Audit Result</div>
-      <pre id="audit-result-pre"></pre>
     </div>
   </div>
 
-  <!-- ── Step 2: Process (tags only) ────────────────────────────────────── -->
-  <div class="card" id="step-process">
+
+    <!-- ── Step 2: Process (tags only) ────────────────────────────────────── -->
+  <div class="card" id="step-process" style="--card-watermark:url('/static/icon-tag.png')">
     <div class="card-head">
       <div class="card-icon caution"><img src="/static/icon-tag.png" alt="Tag Tracks"></div>
       <div class="card-meta">
-        <div class="card-title">Step 2 — Detect BPM &amp; Musical Key</div>
+        <div class="card-title">Tag Tracks — Detect BPM &amp; Musical Key</div>
         <div class="card-blurb">Reads each audio file and writes BPM and musical key into the file's tags. Skips files that already have tags — won't overwrite your Mix In Key work unless you ask it to.</div>
       </div>
       <span class="risk-badge caution">Writes Tags</span>
@@ -1738,11 +1769,9 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     </div>
   </div>
 
-  <!-- ── Standalone tools ──────────────────────────────────────────────── -->
-  <p class="section-title" style="margin-top:48px">Standalone Tools — run any time, independent of the workflow</p>
 
-  <!-- Duplicate detector -->
-  <div class="card" id="step-duplicates">
+    <!-- Duplicate detector -->
+  <div class="card" id="step-duplicates" style="--card-watermark:url('/static/icon-find-duplicate.png')">
     <div class="card-head">
       <div class="card-icon safe"><img src="/static/icon-find-duplicate.png" alt="Find Duplicates"></div>
       <div class="card-meta">
@@ -1801,8 +1830,9 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     </div>
   </div>
 
-  <!-- ── Prune Duplicates ──────────────────────────────────────────────── -->
-  <div class="card" id="step-prune">
+
+    <!-- ── Prune Duplicates ──────────────────────────────────────────────── -->
+  <div class="card" id="step-prune" style="--card-watermark:url('/static/icon-prune.png')">
     <div class="card-head">
       <div class="card-icon danger"><img src="/static/icon-prune.png" alt="Prune"></div>
       <div class="card-meta">
@@ -1876,11 +1906,24 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
         </div>
 
         <!-- Groups list -->
+        <div id="prune-summary-banner" style="display:none;padding:8px 12px;margin-bottom:10px;background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.2);border-radius:6px;font-size:.82rem;color:var(--text-dim)"></div>
         <div id="prune-groups"></div>
+
+        <!-- Pagination -->
+        <div id="prune-pagination" style="display:none;align-items:center;gap:12px;padding:10px 0;margin-top:4px">
+          <button class="btn" id="prune-prev-btn" onclick="_loadPrunePage(prunePage-1)">← Prev</button>
+          <span id="prune-page-info" style="font-size:.82rem;color:var(--text-dim);flex:1;text-align:center"></span>
+          <button class="btn" id="prune-next-btn" onclick="_loadPrunePage(prunePage+1)">Next →</button>
+        </div>
 
         <!-- Action bar -->
         <div class="prune-action-bar">
           <span class="prune-selected-count" id="prune-selected-summary">Select files above to continue.</span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--text-dim);cursor:pointer;user-select:none">
+            <input type="checkbox" id="prune-permanent-cb" style="accent-color:var(--danger)"
+                 onchange="document.getElementById('btn-prune-start').textContent = this.checked ? 'Delete Permanently →' : 'Move to Trash →'">
+            Delete permanently
+          </label>
           <button class="btn btn-prune-danger" id="btn-prune-start"
                   onclick="pruneStep1()" disabled>
             Move to Trash →
@@ -1897,19 +1940,21 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     </div>
   </div>
 
+
   <!-- ── Confirmation panels (spatially separated, no overlapping) ───── -->
   <div id="confirm-backdrop"></div>
 
   <!-- Step 1 — bottom-right. "What you're doing." Proceed button bottom-right. -->
   <div class="confirm-panel" id="confirm-step1">
     <div class="confirm-panel-head">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="confirm-step-num">1</div>
       <div class="confirm-panel-title">Confirm Selection</div>
       <button class="confirm-panel-cancel" onclick="cancelPrune()">✕ Cancel</button>
     </div>
     <div class="confirm-panel-body">
-      <p>You're about to move <strong id="c1-count">—</strong> files to a recovery folder in Trash and remove them from the RekordBox database.</p>
-      <p class="confirm-detail">Nothing is permanently deleted. Files land in <code>~/.Trash/SuperBox_Pruned_[timestamp]/</code> and stay there until you empty Trash yourself.</p>
+      <p>You're about to remove <strong id="c1-count">—</strong> files from the RekordBox database.</p>
+      <p class="confirm-detail" id="c1-mode-note">Files will be moved to a recovery folder in Trash. Nothing is permanently deleted.</p>
     </div>
     <div class="confirm-panel-footer">
       <button class="btn btn-ghost" onclick="cancelPrune()">Cancel</button>
@@ -1920,6 +1965,7 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
   <!-- Step 2 — top-left. File list + execute. -->
   <div class="confirm-panel" id="confirm-step2">
     <div class="confirm-panel-head">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="confirm-step-num">2</div>
       <div class="confirm-panel-title">Review &amp; Execute</div>
       <button class="confirm-panel-cancel" onclick="cancelPrune()">✕ Cancel</button>
@@ -1938,8 +1984,9 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     </div>
   </div>
 
-  <!-- Relocate -->
-  <div class="card" id="step-relocate">
+
+    <!-- Relocate -->
+  <div class="card" id="step-relocate" style="--card-watermark:url('/static/icon-move.png')">
     <div class="card-head">
       <div class="card-icon warn"><img src="/static/icon-move.png" alt="Relocate"></div>
       <div class="card-meta">
@@ -1991,7 +2038,183 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     </div>
   </div>
 
-  <div class="card" id="step-convert">
+
+    <!-- ── Step 3: Import (with built-in preview) ────────────────────────── -->
+  <div class="card" id="step-import" style="--card-watermark:url('/static/icon-import.png')">
+    <div class="card-head">
+      <div class="card-icon warn"><img src="/static/icon-import.png" alt="Import"></div>
+      <div class="card-meta">
+        <div class="card-title">Import — Add Tracks to RekordBox</div>
+        <div class="card-blurb">Preview first to see exactly what will be added — then import. <strong>RekordBox must be closed for the real import.</strong> A timestamped backup is created automatically before anything is written.</div>
+      </div>
+      <span class="risk-badge warn">Writes DB</span>
+    </div>
+
+    <div class="explainers">
+      <details>
+        <summary>What does Preview show?</summary>
+        <div class="explain-body">
+          <p>Preview walks your music folder and checks each file against what's already in the database — no writes, no changes. You'll see:</p>
+          <ul>
+            <li>How many tracks are new (will be imported)</li>
+            <li>How many are already in the DB (will be skipped)</li>
+            <li>Any files it can't read or extract metadata from</li>
+          </ul>
+          <p>Always run Preview first. If the numbers look right, hit Import.</p>
+        </div>
+      </details>
+      <details>
+        <summary>What exactly gets written to the database?</summary>
+        <div class="explain-body">
+          <p>For each new track, it creates a row in <code>DjmdContent</code> with the metadata extracted from the file's tags:</p>
+          <ul>
+            <li>Title, artist, album, genre, year, track number</li>
+            <li>BPM (stored as BPM × 100 — that's how RekordBox expects it)</li>
+            <li>Musical key (translated to RekordBox's internal key ID)</li>
+            <li>Duration, bitrate, sample rate, bit depth, file path</li>
+          </ul>
+          <p>Tracks already in the database are <strong>skipped entirely</strong> — no duplicates created, no overwriting.</p>
+          <p>The operation commits in batches of 250. If anything fails mid-batch, the entire batch rolls back automatically. You won't get half-imported tracks.</p>
+        </div>
+      </details>
+      <details>
+        <summary>What if something goes wrong?</summary>
+        <div class="explain-body">
+          <p>Before the first write, a timestamped copy of <code>master.db</code> is saved to <code>~/rekordbox-toolkit/backups/</code>. If the import fails or something looks wrong afterward, you can restore from that file.</p>
+          <p><strong>RekordBox must be closed</strong> — the server checks this before starting. If it's open, the import will be blocked here before anything is touched.</p>
+          <p>A single bad file will not abort the batch — errors are captured per-file and logged, and the rest of the import continues.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="card-form">
+      <div class="field">
+        <label>Music Folder Path</label>
+        <input type="text" id="import-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="runImportDry()">Preview Import</button>
+        <button class="btn btn-neon" id="btn-import" onclick="runImport()">Import Tracks</button>
+      </div>
+      <div class="rb-block-msg" id="import-rb-block">
+        <span>⚠</span> RekordBox is open. Close it before importing.
+      </div>
+    </div>
+  </div>
+
+
+    <!-- ── Step 4: Link playlists ──────────────────────────────────────────── -->
+  <div class="card" id="step-link" style="--card-watermark:url('/static/icon-link.png')">
+    <div class="card-head">
+      <div class="card-icon warn"><img src="/static/icon-link.png" alt="Link Playlists"></div>
+      <div class="card-meta">
+        <div class="card-title">Link Playlists — Connect Tracks to Folders</div>
+        <div class="card-blurb">Matches imported tracks to RekordBox playlists based on the folder they live in. If your playlists were built from your folder structure, this connects them automatically.</div>
+      </div>
+      <span class="risk-badge warn">Writes DB</span>
+    </div>
+
+    <div class="explainers">
+      <details>
+        <summary>How does the matching work?</summary>
+        <div class="explain-body">
+          <p>For each track, it walks up the folder path toward your music root and compares folder names against playlist names in the database:</p>
+          <ul>
+            <li><strong>Exact match first</strong> — folder name equals playlist name exactly.</li>
+            <li><strong>Fuzzy match second</strong> — if no exact match, it tries similarity scoring. Threshold is 85% similarity. Only applied to names 4 characters or longer (to avoid false positives on short names).</li>
+          </ul>
+          <p>If no match is found, the track is left unlinked and a warning is logged. No track is ever removed from a playlist it was already in.</p>
+        </div>
+      </details>
+      <details>
+        <summary>What if my folder names don't match my playlist names?</summary>
+        <div class="explain-body">
+          <p>Tracks that can't be matched are logged and left alone — they stay in the database, just not assigned to a playlist. You'll see the count in the output.</p>
+          <p>The fuzzy match handles common differences like trailing spaces, slight spelling variations, or accented characters. If the mismatch is large (e.g. completely different naming conventions), you may need to manually link those tracks in RekordBox.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="card-form">
+      <div class="field">
+        <label>Music Folder Path</label>
+        <input type="text" id="link-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-neon" id="btn-link" onclick="runLink()">Link Playlists</button>
+      </div>
+      <div class="rb-block-msg" id="link-rb-block">
+        <span>⚠</span> RekordBox is open. Close it before linking.
+      </div>
+    </div>
+  </div>
+
+
+
+  <p class="section-title" style="margin-top:48px">Optional &amp; Transformative — run after the core pipeline is clean</p>
+
+    <!-- ── Step 5: Normalize ───────────────────────────────────────────────── -->
+  <div class="card" id="step-normalize" style="--card-watermark:url('/static/icon-normalize.png')">
+    <div class="card-head">
+      <div class="card-icon danger"><img src="/static/icon-normalize.png" alt="Normalize"></div>
+      <div class="card-meta">
+        <div class="card-title">Normalize Loudness <em style="font-weight:400;color:var(--text-muted)">(Optional)</em></div>
+        <div class="card-blurb">Adjusts every track's volume so they all hit at the same level on the CDJs. Target is −8.0 LUFS — the DJ standard. <strong>This rewrites the actual audio file.</strong></div>
+      </div>
+      <span class="risk-badge danger">Rewrites Audio</span>
+    </div>
+
+    <div class="explainers">
+      <details>
+        <summary>What exactly happens to my files?</summary>
+        <div class="explain-body">
+          <p>Each file is analyzed for integrated loudness (EBU R128 standard). If it's outside −8.0 LUFS ± 0.5 LUFS, the file is re-encoded:</p>
+          <ul>
+            <li><strong>MP3</strong> → re-encoded at 320 kbps CBR</li>
+            <li><strong>AIFF/WAV</strong> → re-encoded losslessly at the same bit depth as the original</li>
+          </ul>
+          <p>Files already within the tolerance window are <strong>left untouched</strong>.</p>
+          <p>The process: original is renamed to <code>.bak</code>, new file is written, <code>soundfile</code> validates the new file is readable, then — and only then — the <code>.bak</code> is deleted. If validation fails, the <code>.bak</code> is kept and you still have your original.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Should I normalize my files?</summary>
+        <div class="explain-body">
+          <p><strong>Only if inconsistent levels are a real problem for you.</strong> −8.0 LUFS is the correct target for DJ use — it leaves headroom for the mixer and matches what most commercial releases already land at.</p>
+          <p>Things to know before you run this:</p>
+          <ul>
+            <li>This is the highest-risk operation in the toolkit. Back up your drive first.</li>
+            <li>MP3 re-encoding is a lossy process — even at 320 kbps, you're going through an encode cycle. For AIFF/WAV files, re-encoding is lossless.</li>
+            <li>Tracks that are already at the right level are skipped entirely — this will not process your whole library unnecessarily.</li>
+            <li>Do not run this while the drive is in use by RekordBox or during a gig.</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+
+    <div class="card-form">
+      <div class="field">
+        <label>Music Folder Path</label>
+        <input type="text" id="normalize-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+      </div>
+      <div class="field">
+        <label>Parallel Workers <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">— ffmpeg processes to run simultaneously (your Mac has 8 cores)</span></label>
+        <select id="normalize-workers" style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 12px;font-size:.85rem;width:100%;">
+          <option value="1">1 — sequential (safe, slowest)</option>
+          <option value="2">2 workers</option>
+          <option value="4" selected>4 workers (recommended)</option>
+          <option value="6">6 workers (fast)</option>
+          <option value="8">8 workers (max — all cores)</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-neon" onclick="runNormalize()">Normalize Loudness</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="card" id="step-convert" style="--card-watermark:url('/static/icon-convert.png')">
     <div class="card-head">
       <div class="card-icon"><img src="/static/icon-convert.png" alt="Convert"></div>
       <div class="card-meta">
@@ -2044,18 +2267,361 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
           </select>
         </div>
       </div>
+      <div class="field">
+        <label>Parallel Workers <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">— ffmpeg processes to run simultaneously (your Mac has 8 cores)</span></label>
+        <select id="convert-workers" style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 12px;font-size:.85rem;width:100%;">
+          <option value="1">1 — sequential (safe, slowest)</option>
+          <option value="2">2 workers</option>
+          <option value="4" selected>4 workers (recommended)</option>
+          <option value="6">6 workers (fast)</option>
+          <option value="8">8 workers (max — all cores)</option>
+        </select>
+      </div>
       <div class="btn-row">
         <button class="btn btn-neon" id="btn-convert" onclick="runConvert()">Start Converting</button>
       </div>
     </div>
   </div>
 
+
+
+    <!-- ── Organize Library ──────────────────────────────────────────────── -->
+  <div class="card" id="step-organize" style="--card-watermark:url('/static/icon-organizer.png')">
+    <div class="card-head">
+      <div class="card-icon"><img src="/static/icon-organizer.png" alt="Organize"></div>
+      <div class="card-meta">
+        <div class="card-title">Organize Library — Consolidate into Artist / Album / Track</div>
+        <div class="card-blurb">Scans one or more folders (no matter how deeply nested) and moves or copies every track to the correct Artist / Album / Track location. Merges duplicate artist folders, creates missing folders, and prunes empty ones.</div>
+      </div>
+      <span class="risk-badge warn" id="organize-risk-badge">Moves Files</span>
+    </div>
+
+    <div class="explainers">
+      <details>
+        <summary>What structure does this create?</summary>
+        <div class="explain-body">
+          <pre style="font-size:.8rem;line-height:1.6;margin:0">Target Root/
+├── Artist Name/
+│   └── Album or Release Name/
+│       └── track.mp3
+├── Orphaned Tracks/       ← no artist tag
+│   └── 2023/
+│       └── track.mp3
+└── Live Sets &amp; Mixes/    ← duration ≥ mix threshold
+    └── 2024/
+        └── mix.mp3</pre>
+          <p style="margin-top:8px">Joint releases (e.g. "Artist A &amp; Artist B") get their own folder under that combined name. Tracks without an album tag sit directly in the artist folder.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Is this safe to run?</summary>
+        <div class="explain-body">
+          <p><strong>Always run a Dry Run first.</strong> Dry Run scans everything and shows exactly where each file would go — nothing is moved. Review the output in the terminal log, then uncheck Dry Run and run again to execute.</p>
+          <p>Files already at their correct canonical location are skipped. If a filename clash is detected, the incoming file is renamed with a numeric suffix (_1, _2 …) rather than overwriting.</p>
+        </div>
+      </details>
+      <details>
+        <summary>How does it handle artist name variations?</summary>
+        <div class="explain-body">
+          <p>It reads the <strong>Album Artist</strong> tag (TPE2) first, which is typically the primary artist without "feat." credits. If that's missing it falls back to the Track Artist tag (TPE1). This means "Daft Punk feat. Pharrell Williams" lands in the <em>Daft Punk</em> folder, not a separate "feat." folder.</p>
+        </div>
+      </details>
+      <details>
+        <summary>What counts as a Mix / Live Set?</summary>
+        <div class="explain-body">
+          <p>Any track whose duration is at or above the Mix Threshold (default 15 minutes) is routed to <strong>Live Sets &amp; Mixes / YYYY /</strong> instead of the normal Artist tree. Adjust the threshold if your library has long studio tracks you don't want caught.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="card-form">
+      <div class="field-row">
+        <div class="field" style="flex:2">
+          <label>Source folders to scan</label>
+          <div id="organize-source-list" style="display:flex;flex-direction:column;gap:6px;">
+            <div class="org-source-row" style="display:flex;gap:6px;align-items:center;">
+              <input type="text" class="org-source-input" placeholder="/Volumes/DJMT" style="flex:1">
+            </div>
+          </div>
+          <button type="button" onclick="orgAddSource()" style="margin-top:6px;background:none;border:1px dashed var(--border-hi);color:var(--text-dim);border-radius:var(--radius);padding:5px 12px;font-size:.8rem;cursor:pointer;width:100%;text-align:left;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-dim)'">+ Add another source folder</button>
+        </div>
+        <div class="field" style="flex:2">
+          <label>Target — organised library root</label>
+          <input type="text" id="organize-target" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Mode</label>
+          <select id="organize-mode" onchange="orgUpdateMode(this.value)" style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 12px;font-size:.85rem;width:100%;">
+            <option value="assimilate" selected>Full Library Assimilation — move files, clean up source</option>
+            <option value="integrate">Full Library Integration — copy files only, source untouched</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Mix Threshold <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">— tracks longer than this go to Live Sets &amp; Mixes</span></label>
+          <select id="organize-mix-threshold" style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 12px;font-size:.85rem;width:100%;">
+            <option value="10">10 minutes</option>
+            <option value="15" selected>15 minutes (default)</option>
+            <option value="20">20 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">60 minutes</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Parallel Workers <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">— I/O threads</span></label>
+          <select id="organize-workers" style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 12px;font-size:.85rem;width:100%;">
+            <option value="1" selected>1 — sequential (safe)</option>
+            <option value="2">2 workers</option>
+            <option value="4">4 workers</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:4px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:500;">
+          <input type="checkbox" id="organize-dry-run" checked style="width:16px;height:16px;accent-color:var(--accent);">
+          Dry Run — preview without touching any files <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">(recommended — uncheck to execute)</span>
+        </label>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-neon" id="btn-organize" onclick="runOrganize()">Scan &amp; Organize</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <p class="section-title" style="margin-top:48px">Cross-Library Rescue — find unique tracks on other drives</p>
+
+    <!-- ── Novelty Scanner ───────────────────────────────────────────────── -->
+  <div class="card" id="step-novelty" style="--card-watermark:url('/static/icon-novelty.png')">
+    <div class="card-head">
+      <div class="card-icon"><img src="/static/icon-novelty.png" alt="Novelty Scanner"></div>
+      <div class="card-meta">
+        <div class="card-title">Novelty Scanner — Capture Unique Tracks from Any Drive</div>
+        <div class="card-blurb">Scans a source drive for tracks that don't exist anywhere in your home library and copies every one of them across. When in doubt, it copies. Use this to safely rescue one-of-a-kind recordings from backup drives before anything gets lost.</div>
+      </div>
+      <span class="risk-badge safe">SAFE</span>
+    </div>
+    <div class="explainers">
+      <details>
+        <summary>How is this different from Find Duplicates?</summary>
+        <div class="explain-body">
+          <p>Find Duplicates is cold-blooded — it only flags a track as a duplicate when it's highly confident. That strictness protects you from accidental deletion.</p>
+          <p>The Novelty Scanner flips the logic: a track is copied unless we're highly confident it's already in your library. One extra copy on disk costs nothing. A missing irreplaceable recording costs everything.</p>
+          <p><strong>Uses your existing scan index</strong> — tracks already fingerprinted during a BPM/key run skip straight past Chromaprint, making the scan much faster on large libraries.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Dry Run vs Live Run</summary>
+        <div class="explain-body">
+          <p>Dry Run (default) scans and reports what would be copied without touching anything. The source drive is <strong>never modified</strong> in either mode — this tool only copies, never moves.</p>
+          <p>Live Run copies novel tracks into your destination using the same Artist / Album / Track structure as the Library Organizer. Already-structured files keep their folder layout.</p>
+        </div>
+      </details>
+    </div>
+    <div class="card-form">
+      <div class="field">
+        <label>Source Drive / Folder</label>
+        <input type="text" id="novelty-source" placeholder="/Volumes/Passport">
+      </div>
+      <div class="field">
+        <label>Destination (Home Library)</label>
+        <input type="text" id="novelty-dest" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+      </div>
+      <div class="field">
+        <div class="checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="novelty-dry-run" checked>
+            Dry Run (preview only — nothing will be copied)
+          </label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-novelty" onclick="runNovelty()">
+          <img src="/static/icon-novelty.png" style="width:16px;height:16px;filter:brightness(0) invert(1)" alt="">
+          Scan for Novel Tracks
+        </button>
+      </div>
+      <div class="rb-block-msg" id="novelty-rb-block">
+        <span>⚠</span> Close Rekordbox before running a live scan.
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ── Pipeline step-confirm gate (standalone fixed overlay) ─────────────── -->
+  <div id="pipe-confirm-gate" style="display:none;position:fixed;bottom:calc(var(--log-h) + var(--scan-bar-h) + 16px);left:50%;transform:translateX(-50%);width:min(600px,92vw);z-index:1100;padding:14px 16px;border-radius:8px;border:1px solid var(--pipe-gate-border, rgba(251,191,36,.35));background:var(--pipe-gate-bg, rgba(251,191,36,.06));backdrop-filter:blur(8px);box-shadow:0 8px 32px rgba(0,0,0,.6);">
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <span id="pipe-gate-icon" style="font-size:1.3rem;line-height:1">✓</span>
+      <div style="flex:1">
+        <div id="pipe-gate-title" style="font-weight:600;color:var(--text);margin-bottom:4px">Step complete</div>
+        <div id="pipe-gate-body" style="color:var(--text-muted);line-height:1.5;font-size:.82rem;margin-bottom:12px"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-neon" id="pipe-btn-finish" onclick="pipeGateAction('finish')" style="padding:6px 18px;display:none;gap:7px"><img src="/static/icon-restart-from-interrupt.png" style="width:18px;height:18px;object-fit:contain"> Finish</button>
+          <button class="btn btn-neon" id="pipe-btn-redo" onclick="pipeGateAction('redo')" style="padding:6px 14px;display:none;gap:7px"><img src="/static/icon-restart-step.png" style="width:18px;height:18px;object-fit:contain"> Re-do</button>
+          <button class="btn" id="pipe-btn-skip" onclick="pipeGateAction('skip')" style="padding:6px 14px;display:none;border-color:var(--caution);color:var(--caution);gap:7px"><img src="/static/icon-skip-to-next-step.png" style="width:18px;height:18px;object-fit:contain"> Skip</button>
+          <button class="btn" onclick="pipeGateAction('stop')" style="color:var(--danger);border-color:var(--danger);padding:6px 14px;gap:7px"><img src="/static/icon-interrupt-plus-stop-wizard.png" style="width:18px;height:18px;object-fit:contain"> Stop</button>
+          <span id="pipe-gate-next-label" style="font-size:.78rem;color:var(--text-dim);margin-left:4px"></span>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
+
+<!-- ══ Pipeline Wizard ══════════════════════════════════════════════════════ -->
+<div id="pipeline-wizard-backdrop" class="hidden" onclick="if(event.target===this)closePipelineWizard()">
+  <div id="pipeline-wizard">
+
+    <!-- ── Shared header banner ───────────────────────────────────────────── -->
+    <div style="padding:16px 24px 0;text-align:center;flex-shrink:0">
+      <img src="/static/superbox-header.png" alt="SuperBox" style="height:38px;object-fit:contain;opacity:.9">
+    </div>
+
+    <!-- ── Phase 1: Build your pipeline ──────────────────────────────────── -->
+    <div id="pipe-wiz-p1">
+      <div class="pipe-wiz-header">
+        <img src="/static/SRB_LOGO.png" alt="" style="width:26px;height:26px;object-fit:contain;opacity:.7;mix-blend-mode:screen;flex-shrink:0">
+        <div style="flex:1">
+          <div class="pipe-wiz-title">Pipeline Wizard</div>
+          <div class="pipe-wiz-sub">Choose your steps and order, then configure each one.</div>
+        </div>
+        <button class="welcome-close" onclick="closePipelineWizard()" title="Close">✕</button>
+      </div>
+
+      <div class="pipe-wiz-body">
+
+        <!-- Left: available steps -->
+        <div class="pipe-wiz-available">
+          <div class="pipe-col-label" style="margin-bottom:8px">Available steps — click to add</div>
+          <button onclick="pipelineLoadRecommended()" style="width:100%;margin-bottom:10px;padding:8px 12px;background:#111;border:1px solid #333;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:700;letter-spacing:.08em;color:#fff;text-shadow:0 0 8px rgba(255,255,255,.8),0 0 20px rgba(255,255,255,.4);transition:background .15s,border-color .15s">★ Load recommended order</button>
+
+          <button class="pipe-action-btn" onclick="pipelineAddStep('audit')" title="DB snapshot + full physical filesystem scan">
+            <img src="/static/icon-audit.png" class="pipe-action-icon" alt="Library Audit">
+            <span class="pipe-action-text"><strong>Library Audit</strong><span>DB snapshot + physical filesystem inventory</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('process')" title="Write BPM and Key tags into every file">
+            <img src="/static/icon-tag.png" class="pipe-action-icon" alt="Tag Tracks">
+            <span class="pipe-action-text"><strong>Tag Tracks</strong><span>Writes BPM and musical key into each file</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('duplicates')" title="Find identical recordings no matter how they're named">
+            <img src="/static/icon-find-duplicate.png" class="pipe-action-icon" alt="Find Duplicates">
+            <span class="pipe-action-text"><strong>Find Duplicates</strong><span>Scans for files that are the same recording</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('prune')" title="Remove the copies confirmed in Find Duplicates">
+            <img src="/static/icon-prune.png" class="pipe-action-icon" alt="Prune Duplicates">
+            <span class="pipe-action-text"><strong>Prune Duplicates</strong><span>Remove copies found by Find Duplicates</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('relocate')" title="Update RekordBox after files have moved">
+            <img src="/static/icon-move.png" class="pipe-action-icon" alt="Fix Broken Paths">
+            <span class="pipe-action-text"><strong>Fix Broken Paths</strong><span>Update RekordBox after files have moved</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('import')" title="Add new audio files into the RekordBox database">
+            <img src="/static/icon-import.png" class="pipe-action-icon" alt="Import Tracks">
+            <span class="pipe-action-text"><strong>Import Tracks</strong><span>Add new audio files to RekordBox database</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('link')" title="Link imported tracks to playlists by folder name">
+            <img src="/static/icon-link.png" class="pipe-action-icon" alt="Link Playlists">
+            <span class="pipe-action-text"><strong>Link Playlists</strong><span>Connect tracks to playlists by folder name</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('normalize')" title="Re-encode tracks that are too loud or too quiet">
+            <img src="/static/icon-normalize.png" class="pipe-action-icon" alt="Balance Loudness">
+            <span class="pipe-action-text"><strong>Balance Loudness</strong><span>Brings every track to the same volume level</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('convert')" title="Change every file to your chosen audio format">
+            <img src="/static/icon-convert.png" class="pipe-action-icon" alt="Convert Format">
+            <span class="pipe-action-text"><strong>Convert Format</strong><span>Changes files to AIFF, MP3, WAV, or FLAC</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('organize')" title="Move files into Artist / Album / Track folders">
+            <img src="/static/icon-organizer.png" class="pipe-action-icon" alt="Organize Library">
+            <span class="pipe-action-text"><strong>Organize Library</strong><span>Moves files into Artist / Album / Track order</span></span>
+          </button>
+          <button class="pipe-action-btn" onclick="pipelineAddStep('novelty')" title="Copy tracks that exist only on the source drive">
+            <img src="/static/icon-novelty.png" class="pipe-action-icon" alt="Novelty Scan">
+            <span class="pipe-action-text"><strong>Novelty Scan</strong><span>Copy unique tracks from source into library</span></span>
+          </button>
+
+        </div>
+
+        <!-- Right: pipeline queue -->
+        <div class="pipe-wiz-queue-col">
+          <div class="pipe-col-label" style="margin-bottom:10px">
+            Your pipeline — runs top to bottom
+            <button onclick="pipelineClear()" style="float:right;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:.8rem;padding:0" title="Remove all steps">Clear all</button>
+          </div>
+          <div id="pipeline-queue" class="pipeline-queue">
+            <div class="pipe-empty" id="pipe-empty-msg">
+              No steps added yet.<br>
+              <span style="font-size:.8rem;color:var(--text-dim)">Click an action on the left to start building.</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="pipe-recommended-note" class="hidden" style="margin:0 20px 0;padding:10px 14px;background:var(--surface-hi);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;font-size:.78rem;line-height:1.5;color:var(--text-dim);flex-shrink:0">
+        <strong style="color:var(--text)">Why this order?</strong> Tag first so BPM/key are ready for duplicate detection. Find duplicates before deleting. Prune after reviewing. Relocate so DB paths are correct. Organize once clean. Normalize last.
+      </div>
+
+      <div class="pipe-wiz-footer">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:500">
+          <input type="checkbox" id="wiz-dry-run" checked style="width:15px;height:15px;accent-color:var(--accent)">
+          Dry Run — preview only
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;color:var(--text-muted)">
+          <input type="checkbox" id="wiz-confirm-steps" style="width:14px;height:14px;accent-color:var(--caution)">
+          Confirm between steps
+        </label>
+        <div style="margin-left:auto;display:flex;gap:10px">
+          <button class="btn" onclick="closePipelineWizard()">Cancel</button>
+          <button class="btn btn-neon" onclick="pipeWizNext()">Configure Steps →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Phase 2: Configure each step ───────────────────────────────────── -->
+    <div id="pipe-wiz-p2" class="hidden">
+      <div class="pipe-wiz-header">
+        <img src="/static/SRB_LOGO.png" alt="" style="width:26px;height:26px;object-fit:contain;opacity:.7;mix-blend-mode:screen;flex-shrink:0">
+        <div style="flex:1">
+          <div class="pipe-wiz-title">Configure Steps</div>
+          <div class="pipe-wiz-sub">Set paths and options — click a step on the left to jump to it.</div>
+        </div>
+        <button class="welcome-close" onclick="closePipelineWizard()" title="Close">✕</button>
+      </div>
+
+      <div class="pipe-wiz-p2-body">
+        <!-- Left: step stack -->
+        <div class="pipe-wiz-stack" id="pipe-wiz-stack"></div>
+        <!-- Right: config forms (scrollable) -->
+        <div class="pipe-wiz-configs" id="pipe-wiz-configs"></div>
+      </div>
+
+      <div class="pipe-wiz-footer">
+        <button class="btn" onclick="pipeWizBack()">← Back</button>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:500">
+          <input type="checkbox" id="wiz-dry-run-2" checked style="width:15px;height:15px;accent-color:var(--accent)">
+          Dry Run
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;color:var(--text-muted)">
+          <input type="checkbox" id="wiz-confirm-steps-2" style="width:14px;height:14px;accent-color:var(--caution)">
+          Confirm between steps
+        </label>
+        <button class="btn btn-neon" id="wiz-run-btn" onclick="pipeWizRun()" style="margin-left:auto;gap:8px"><img src="/static/icon-start-wizard.png" style="width:18px;height:18px;object-fit:contain"> Run Pipeline</button>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <!-- ══ Step completion report modal ════════════════════════════════════════ -->
 <div id="report-modal-backdrop" class="hidden">
   <div id="report-modal">
     <div class="rmod-header">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="rmod-header-text">
         <h2 id="rmod-title">Step Complete</h2>
         <p class="rmod-save-path" id="rmod-save-path"></p>
@@ -2086,17 +2652,20 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
 </footer>
 
 <!-- ══ Floating action buttons ══════════════════════════════════════════════ -->
+<!-- ── Pipeline Wizard button ─────────────────────────────────────────────── -->
+<div id="pipeline-btn" onclick="openPipelineWizard()" title="Pipeline Wizard">
+  <img src="/static/icon-start-wizard.png" style="width:24px;height:24px;object-fit:contain">
+</div>
+
 <div id="lightbulb-btn" onclick="openWelcome()" title="About SuperBox">
-  <span style="font-size:1.1rem;line-height:1">💡</span>
-  <span>About</span>
+  <img src="/static/icon-welcome-info.png" style="width:24px;height:24px;object-fit:contain">
 </div>
 
 <!-- ══ Owl / Glossary ════════════════════════════════════════════════════════ -->
 <div id="owl-btn"
      onmouseenter="owlHoverIn()" onmouseleave="owlHoverOut()"
      onclick="owlClick()">
-  <span class="owl-icon">🦉</span>
-  <span>KEY</span>
+  <img src="/static/icon-site-key.png" style="width:24px;height:24px;object-fit:contain" class="owl-icon">
 </div>
 
 <div id="owl-hover-panel"
@@ -2117,6 +2686,7 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     
     <!-- Header -->
     <div class="settings-header">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <h2>⚙ Archive &amp; Log Settings</h2>
       <button class="settings-close" onclick="closeSettings()">✕</button>
     </div>
@@ -2156,6 +2726,22 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
 
         </div>
 
+        <!-- Excluded dirs -->
+        <div style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
+          <label style="display:block; font-size:.82rem; color:var(--text-muted); margin-bottom:6px;">
+            🚫 Excluded folder names
+            <span style="color:var(--text-dim); font-weight:400;"> — one per line, folder name only (not full path)</span>
+          </label>
+          <textarea id="settings-excluded-dirs" rows="4"
+            style="width:100%; background:var(--surface); border:1px solid var(--border-hi);
+                   color:var(--text); border-radius:6px; padding:8px 10px; font-family:var(--mono);
+                   font-size:.8rem; resize:vertical;"
+            placeholder="ollama&#10;DJMT PRIMARY_PROCESSING_LOGIC&#10;POST PROCESS ZIP ARCHIVE"></textarea>
+          <div style="font-size:.75rem; color:var(--text-dim); margin-top:4px;">
+            Folders with these names are skipped during all scans (Tag Tracks, Normalize, Convert, Audit). Use this to exclude nested drive copies, app data, or any non-music folder inside your music root.
+          </div>
+        </div>
+
         <div class="settings-warnings" id="settings-warnings">
           <h4>Features affected when logging is disabled</h4>
           <div class="settings-warn-item">
@@ -2183,10 +2769,32 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
   </div>
 </div>
 
+<!-- ══ Path picker modal ═════════════════════════════════════════════════════ -->
+<div id="path-backdrop" class="hidden">
+  <div id="path-modal-box">
+    <h3>What are you here to do?</h3>
+    <p class="path-sub">Your library is ready when you are.</p>
+    <div class="path-options">
+      <button class="path-opt" onclick="choosePath('manual')">
+        <span class="path-opt-icon">🎛</span>
+        <span class="path-opt-title">Manual tools</span>
+        <span class="path-opt-desc">Pick any tool on its own — convert files, find duplicates, fix paths, check library health. One thing at a time, full control.</span>
+      </button>
+      <button class="path-opt" onclick="choosePath('pipeline')">
+        <span class="path-opt-icon">▶</span>
+        <span class="path-opt-title">Build a pipeline</span>
+        <span class="path-opt-desc">Design a step-by-step workflow and run it all at once — or just a few steps. Load the recommended order or build your own.</span>
+      </button>
+    </div>
+    <button class="path-skip" onclick="choosePath('manual')">skip, take me to the tools →</button>
+  </div>
+</div>
+
 <!-- ══ Welcome modal ════════════════════════════════════════════════════════ -->
 <div id="welcome-backdrop" class="hidden">
   <div id="welcome-modal">
     <div class="welcome-header">
+      <img src="/static/SRB_LOGO.png" alt="" style="width:22px;height:22px;object-fit:contain;opacity:.55;flex-shrink:0;mix-blend-mode:screen;">
       <div class="welcome-header-text">
         <h2>Welcome to SuperBox</h2>
         <p>A free, open-source rekordbox library toolkit by Guthrie Entertainment LLC</p>
@@ -2198,18 +2806,85 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
 
       <div class="welcome-section">
         <h3>Why this exists</h3>
-        <p>Rekordbox is an excellent performance tool. As a library manager, it has real limits. It doesn't write analysis results to your actual audio files — only its own database. That means BPM and key data disappears if you ever rebuild your library, migrate to another platform, or Rekordbox loses its mind. And it does, sometimes.</p>
-        <p>Path breakage is the other one. Move a folder, rename a drive, plug into a different USB port on a different computer — Rekordbox loses every file it can't find and gives you no tools to fix it in bulk. SuperBox was built to solve exactly these problems, and to give DJs with large, mature libraries a safety net that Rekordbox doesn't provide.</p>
+        <p>Rekordbox is an excellent performance tool. As a library manager, it has real limits. It doesn't write analysis results to your actual audio files — only its own database. BPM, key, and path data all live inside Rekordbox's private database, which means a library rebuild, a drive rename, or a corrupt database wipes all of it with no recovery path.</p>
+        <p>Path breakage is the other one. Move a folder, rename a drive, plug into a different USB port — Rekordbox loses every file it can't find and gives you no tools to fix it in bulk. SuperBox was built to solve exactly these problems: to give DJs with large, mature libraries a safety net that Rekordbox doesn't provide, and to ensure your library data outlives any single piece of software.</p>
       </div>
 
       <div class="welcome-section">
-        <h3>What it does</h3>
-        <p><strong>Audit</strong> — reads your database and music folder and cross-checks them. Orphaned files, missing tracks, broken paths, untagged tracks. Gives you the full picture before you touch anything.</p>
-        <p><strong>Tag Tracks</strong> — analyzes each audio file's actual waveform and writes BPM and musical key directly into the file tags (ID3 for MP3/AIFF, Vorbis for FLAC). These tags travel with the file forever, independent of any database.</p>
-        <p><strong>Import</strong> — adds new tracks to Rekordbox's database with a full backup created before any write. Preview mode shows you exactly what would change before committing.</p>
-        <p><strong>Normalize</strong> — measures integrated loudness per track (EBU R128 standard) and re-encodes files that fall outside the target. Every original is preserved as a .bak until the new file is verified readable.</p>
-        <p><strong>Duplicates</strong> — acoustic fingerprinting across your whole library. Finds files that are the same recording regardless of filename, bitrate, or format. Not filename matching — actual audio content comparison.</p>
-        <p><strong>Relocate</strong> — when a drive mounts under a new name or files move to a new folder, this updates every affected path in the database in one operation. Three match strategies: exact, hash-based, and fuzzy.</p>
+        <h3>Core pipeline — each tool feeds the next</h3>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px;">Run these in order on a fresh library. Each step's output is used as input by the steps that follow it.</p>
+
+        <p><strong>▣ Library Audit</strong> — two passes in one run. The <em>database pass</em> reads your Rekordbox database and flags orphaned entries, broken file paths, untagged tracks, and duplicates the DB already knows about. The <em>physical scan pass</em> walks your entire music drive and maps every audio file on disk — extension breakdown, total size, trash-adjacent files, and a complete file inventory. The combined report is written to JSON and feeds the Relocate, Import, and Prune tools downstream. Run this first, every time.</p>
+
+        <p><strong>🏷 Tag Tracks</strong> — analyzes each audio file's actual waveform using librosa and writes BPM and musical key directly into the file's tags (ID3 for MP3/AIFF, Vorbis comments for FLAC/OGG). Tags travel with the file permanently, independent of any database or software. Run this before finding duplicates so the pre-filter can use accurate BPM and key values.</p>
+
+        <p><strong>🔎 Find Duplicates</strong> — acoustic fingerprinting across your whole library via Chromaprint. Finds files that are the same recording regardless of filename, bitrate, format, or trim length. Pre-filters by BPM, key, and duration before fingerprinting to keep things fast on large libraries. Produces a CSV report that the Prune tool reads directly.</p>
+
+        <p><strong>✂ Prune Duplicates</strong> — loads the duplicate report and lets you select which files to remove from each group. Confirmation is deliberately multi-step, with each confirm button placed at a different screen corner to prevent muscle-memory clicking through a destructive action. Files go to Trash by default; permanent deletion is a separate explicit choice. Reads the CSV from Find Duplicates automatically if available.</p>
+
+        <p><strong>📍 Fix Broken Paths</strong> — when a drive mounts under a new name, or files move to a new folder, every path stored in Rekordbox's database breaks silently. This tool takes an old path prefix and a new path prefix, then updates every matching entry in the database in one operation. Always creates a timestamped database backup before writing.</p>
+
+        <p><strong>＋ Import</strong> — scans a folder and adds new audio files to Rekordbox's database. Skips files already present. Dry-run mode shows exactly what would be added before committing. A full database backup is created before any write.</p>
+
+        <p><strong>🔗 Link Playlists</strong> — associates imported tracks to Rekordbox playlists based on the folder structure they live in. If your files are organized into named subfolders, this maps those folder names to playlist names automatically. Run after Import.</p>
+      </div>
+
+      <div class="welcome-section">
+        <h3>Optional &amp; transformative</h3>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px;">Run after the core pipeline is clean. These tools modify audio files directly.</p>
+
+        <p><strong>📢 Normalize</strong> — measures the integrated loudness of each track using the EBU R128 standard (the same standard used in broadcast and streaming), and re-encodes any file that falls outside your target range. Every original is preserved as a <code>.bak</code> file until the new version is verified readable. Keeps energy consistent across your sets without touching gain in Rekordbox.</p>
+
+        <p><strong>🔄 Convert Format</strong> — re-encodes audio files in a folder to a target format. Useful for converting a batch of downloads to your preferred format before importing. Originals are preserved.</p>
+
+        <p><strong>🗂 Organize (De-fragment Library)</strong> — moves files into a consistent <code>Artist / Album / Track</code> folder hierarchy based on their embedded tags. Uses the Album Artist tag (TPE2) rather than the Track Artist tag (TPE1) to avoid an explosion of per-feature-artist folders. Camelot key prefixes in artist names are stripped before folder creation. Dry-run mode available. In assimilate mode, tracks from multiple source drives are consolidated into one target library root.</p>
+      </div>
+
+      <div class="welcome-section">
+        <h3>Cross-library rescue</h3>
+        <p><strong>★ Novelty Scanner</strong> — scans a source drive or folder (a backup drive, a USB stick, an old hard disk) and identifies audio files that are not acoustically present in your main library. These are genuinely new-to-you tracks, not duplicates under different names. Found tracks can be copied or moved to your primary library for import. Useful for recovering tracks from old drives you thought you'd lost.</p>
+      </div>
+
+      <div class="welcome-section">
+        <h3>▶ Pipeline Builder</h3>
+        <p>Chain any combination of tools into a single automated run. Add steps from the left panel, reorder them, and hit Run Pipeline. Two modes:</p>
+        <div class="welcome-tool-row">
+          <div class="welcome-tool">
+            <div class="welcome-tool-name">Auto mode</div>
+            <div class="welcome-tool-desc">Steps run back-to-back without stopping. Output from each step is passed to the next automatically — the duplicates CSV found by Find Duplicates is fed directly into Prune without you having to copy a path. The full combined output streams to the log panel in real time.</div>
+          </div>
+          <div class="welcome-tool">
+            <div class="welcome-tool-name">Confirm between steps</div>
+            <div class="welcome-tool-desc">Pauses after each step completes and shows a gate panel before the next step begins. The gate is color-coded: green tint on success, red tint on failure. Four actions are available depending on outcome:</div>
+          </div>
+        </div>
+        <div class="welcome-compare-row" style="margin-top:10px;">
+          <div class="welcome-compare">
+            <div class="welcome-compare-name">↻ Re-do</div>
+            <div class="welcome-compare-desc">Runs the same step again from scratch. Useful if a step failed because Rekordbox was still open, or if you want to tweak a setting and retry before moving on.</div>
+          </div>
+          <div class="welcome-compare">
+            <div class="welcome-compare-name">✓ Finish</div>
+            <div class="welcome-compare-desc">Stops the pipeline here and marks it complete. Use this when a step succeeded and you don't need the remaining steps this session.</div>
+          </div>
+          <div class="welcome-compare">
+            <div class="welcome-compare-name">⏭ Skip</div>
+            <div class="welcome-compare-desc">Skips the current step's result and advances to the next one. Available when a step fails and you want to continue the pipeline anyway — for example, skipping a failed Normalize to still run Organize after it.</div>
+          </div>
+          <div class="welcome-compare">
+            <div class="welcome-compare-name">⏹ Stop</div>
+            <div class="welcome-compare-desc">Aborts the pipeline immediately. Always visible in the gate regardless of step outcome. Any steps that already completed are not reversed.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="welcome-section">
+        <h3>Quality of life</h3>
+        <p><strong>Drag and drop</strong> — every path input on every card and in the Pipeline Builder accepts a file or folder dragged directly from Finder. Drop anything onto the field. A faint purple dashed ring marks each drop target; it glows neon on hover. The full path populates instantly and the field flashes green to confirm.</p>
+        <p><strong>Session pills</strong> — completed operations are tracked as pills in the bottom-right corner for the duration of your session. Click any pill to re-open that step's full output log.</p>
+        <p><strong>Report viewer</strong> — after any tool run, a report card appears inside the card showing a summary of what happened. Click <em>View Full Report</em> to open the complete output in a scrollable modal.</p>
+        <p><strong>Owl / Glossary</strong> — the owl icon (bottom right) opens a floating glossary of every technical term used in SuperBox. Click any term in the glossary for a full explanation card. Useful if you're not sure what a Camelot key, an orphaned entry, or EBU R128 means.</p>
+        <p><strong>Settings</strong> — the ⚙ gear icon (top right) controls archive mode (which drive SuperBox writes backups to), log retention, and scan exclusions. Changes take effect immediately.</p>
       </div>
 
       <div class="welcome-section">
@@ -2217,23 +2892,27 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
         <div class="welcome-tool-row">
           <div class="welcome-tool">
             <div class="welcome-tool-name">librosa</div>
-            <div class="welcome-tool-desc">Open-source audio analysis library from the music information retrieval research community. Used for BPM detection (beat tracking on the actual waveform) and key detection (Krumhansl-Schmuckler algorithm on chroma features). Free, runs entirely on your machine.</div>
-          </div>
-          <div class="welcome-tool">
-            <div class="welcome-tool-name">mutagen</div>
-            <div class="welcome-tool-desc">Industry-standard Python library for reading and writing audio file tags. Handles ID3 (MP3/AIFF), Vorbis comments (FLAC), and more. Used by Beets, MusicBrainz Picard, and many other tools in the music metadata world.</div>
-          </div>
-          <div class="welcome-tool">
-            <div class="welcome-tool-name">pyrekordbox</div>
-            <div class="welcome-tool-desc">Reads and writes Rekordbox's SQLite database directly, using the same file Rekordbox uses. This is what lets SuperBox import tracks, update paths, and link playlists without Rekordbox needing to be open.</div>
-          </div>
-          <div class="welcome-tool">
-            <div class="welcome-tool-name">pyloudnorm + soundfile</div>
-            <div class="welcome-tool-desc">EBU R128 loudness measurement and audio I/O. The same loudness standard used in broadcast and streaming. Ensures every track in your set hits the same integrated loudness target — consistent energy without riding the gain knob.</div>
+            <div class="welcome-tool-desc">Open-source audio analysis from the music information retrieval research community. Beat tracking on the actual waveform for BPM; Krumhansl-Schmuckler algorithm on chroma features for key detection. Runs entirely on your machine, no internet required.</div>
           </div>
           <div class="welcome-tool">
             <div class="welcome-tool-name">chromaprint + pyacoustid</div>
-            <div class="welcome-tool-desc">Acoustic fingerprinting — the same underlying technology used by AcoustID and MusicBrainz. Generates a compact signature from the audio content itself. Two files with different names, different bitrates, different lengths — if they're the same recording, this finds them.</div>
+            <div class="welcome-tool-desc">Acoustic fingerprinting — the same technology behind AcoustID and MusicBrainz. Generates a compact signature from audio content. Two files with different names, bitrates, and lengths — if they're the same recording, this finds them.</div>
+          </div>
+          <div class="welcome-tool">
+            <div class="welcome-tool-name">pyrekordbox</div>
+            <div class="welcome-tool-desc">Reads and writes Rekordbox's SQLite database directly. This is what lets SuperBox import tracks, fix paths, and link playlists without Rekordbox needing to be open. Rekordbox must be closed before any write operation.</div>
+          </div>
+          <div class="welcome-tool">
+            <div class="welcome-tool-name">mutagen</div>
+            <div class="welcome-tool-desc">Industry-standard Python library for reading and writing audio file tags. Handles ID3 (MP3/AIFF), Vorbis comments (FLAC), and more. Used by Beets, MusicBrainz Picard, and most serious music metadata tools.</div>
+          </div>
+          <div class="welcome-tool">
+            <div class="welcome-tool-name">pyloudnorm + soundfile</div>
+            <div class="welcome-tool-desc">EBU R128 loudness measurement and audio I/O. The broadcast and streaming standard. Measures integrated loudness across the whole track — not peak, not RMS — and re-encodes only what falls outside your target range.</div>
+          </div>
+          <div class="welcome-tool">
+            <div class="welcome-tool-name">Flask + Waitress</div>
+            <div class="welcome-tool-desc">Local web server — no cloud, no CDN, no external network calls. Everything runs on localhost:5001. The browser is just a UI skin over Python processes running on your own machine. Shut the server down with the ⏻ Quit button.</div>
           </div>
         </div>
       </div>
@@ -2243,29 +2922,30 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
         <div class="welcome-compare-row">
           <div class="welcome-compare">
             <div class="welcome-compare-name">vs Mixed In Key</div>
-            <div class="welcome-compare-desc">Mixed In Key is excellent and arguably still the most accurate BPM/key tool built specifically for DJs. It's $58 one-time, polished, and has years of refinement behind it. SuperBox uses librosa, which is solid and research-grade, but MIK has the edge on accuracy for complex or atonal tracks. If you use MIK, SuperBox respects that — it won't overwrite existing tags unless you explicitly ask it to.</div>
+            <div class="welcome-compare-desc">MIK is excellent and arguably the most accurate BPM/key tool built specifically for DJs. $58 one-time, polished, years of refinement. SuperBox uses librosa — solid and research-grade — but MIK has the edge on complex or atonal tracks. If you use MIK, SuperBox respects it: it won't overwrite existing tags unless you explicitly ask.</div>
           </div>
           <div class="welcome-compare">
             <div class="welcome-compare-name">vs Lexicon</div>
-            <div class="welcome-compare-desc">Lexicon is the best cross-platform DJ library manager available right now, around $10/month. If you work across Serato, Traktor, and Rekordbox, Lexicon is probably the right tool. SuperBox is Rekordbox-specific, free, and focused on the safety and recovery problems Lexicon doesn't prioritize. They're not direct competitors — they solve different problems.</div>
+            <div class="welcome-compare-desc">Lexicon is the best cross-platform DJ library manager right now, ~$10/month. If you work across Serato, Traktor, and Rekordbox, Lexicon is probably the right tool. SuperBox is Rekordbox-specific, free, and focused on the safety and recovery problems Lexicon doesn't prioritize. They solve different problems.</div>
           </div>
           <div class="welcome-compare">
             <div class="welcome-compare-name">vs Rekordbox's own analysis</div>
-            <div class="welcome-compare-desc">Rekordbox's BPM analysis is fine. The fundamental difference is where results are stored. Rekordbox writes to its database only — results don't survive a library rebuild and don't work in other software. SuperBox writes to the file tags themselves. Those tags travel with the audio file permanently, across any software and any database.</div>
+            <div class="welcome-compare-desc">Rekordbox's BPM analysis is fine. The difference is where the results live. Rekordbox writes to its database only — results don't survive a rebuild and don't work elsewhere. SuperBox writes to the file tags. Those tags live in the audio file forever, across any software and any database rebuild.</div>
           </div>
           <div class="welcome-compare">
             <div class="welcome-compare-name">vs MusicBrainz Picard</div>
-            <div class="welcome-compare-desc">Picard is a full metadata editor — it identifies recordings, corrects track info, standardizes tags. SuperBox doesn't do that. It doesn't touch song titles, artists, or album data. The scope is deliberately narrow: BPM, key, loudness, path integrity, and library safety. Different tool, different job.</div>
+            <div class="welcome-compare-desc">Picard identifies recordings and corrects metadata — titles, artists, albums. SuperBox deliberately doesn't touch any of that. The scope is narrow by design: BPM, key, loudness, path integrity, and library safety. Different tool, different job.</div>
           </div>
         </div>
       </div>
 
       <div class="welcome-section">
         <h3>The philosophy</h3>
-        <p>Every write operation in SuperBox creates a timestamped backup before it touches anything. DB changes, audio rewrites, path updates — all of it is logged and reversible. Files go to Trash, not permanent deletion. The goal is that you should be able to undo anything SuperBox has ever done to your library.</p>
-        <p>No cloud. No accounts. No subscription. Your library data stays on your machine.</p>
+        <p>Every write operation in SuperBox creates a timestamped backup before touching anything. Database changes, audio rewrites, path updates — all logged and reversible. Files are moved to Trash rather than permanently deleted unless you explicitly choose otherwise. The goal is that nothing SuperBox has ever done to your library should be unrecoverable.</p>
+        <p>Rekordbox must be closed before any write operation. SuperBox will warn you if it detects Rekordbox is running.</p>
+        <p>No cloud. No accounts. No subscription. No internet dependency at runtime. Your library data stays on your machine.</p>
         <p style="margin-top:10px; padding:10px 14px; background:var(--surface-hi); border:1px solid var(--border); border-radius:7px; font-size:.81rem; color:var(--text-muted);">
-          💡 You can revisit this window anytime — including the archive folder setup — by clicking the <strong style="color:var(--text)">lightbulb icon</strong> in the bottom-right corner of the screen.
+          💡 You can revisit this window anytime — including the archive folder setup below — by clicking the <strong style="color:var(--text)">lightbulb icon</strong> in the bottom-right corner of the screen.
         </p>
       </div>
 
@@ -2331,6 +3011,12 @@ body.log-open #session-pills-container     { bottom: calc(var(--log-h) + 44px + 
     <span id="scan-bar-title"></span>
     <div id="scan-bar-spinner"></div>
     <button class="scan-bar-view-btn" onclick="reopenLog()">▸ Output</button>
+    <button class="scan-bar-interrupt-btn" id="scan-bar-interrupt"
+            onclick="interruptScan()"
+            title="Ask the scan to stop gracefully (keeps server running)">⏸ Interrupt</button>
+    <button class="scan-bar-emergency-btn" id="scan-bar-emergency"
+            onclick="emergencyStop()"
+            title="Force-kill this scan immediately (server stays running)">⚡ Emergency Stop</button>
     <button class="scan-bar-dismiss" id="scan-bar-dismiss" style="display:none" onclick="dismissScanBar()" title="Dismiss">✕</button>
   </div>
 </div>
@@ -2388,6 +3074,17 @@ function _addOrUpdateSummaryPill(title) {
   container.appendChild(pill);
 }
 
+/* ── Modal open pulse ──────────────────────────────────────────────────────
+   Call pulseModal(innerBoxEl) immediately after making any backdrop visible.
+   Removes the class on animationend so re-opening replays the animation.   */
+function pulseModal(el) {
+  if (!el) return;
+  el.classList.remove('modal-pulse-once');
+  void el.offsetWidth; // force reflow so animation restarts on re-open
+  el.classList.add('modal-pulse-once');
+  el.addEventListener('animationend', () => el.classList.remove('modal-pulse-once'), { once: true });
+}
+
 function openReportModal(title, text, reportPath) {
   document.getElementById('rmod-title').textContent = title + ' — Complete';
   const pathEl = document.getElementById('rmod-save-path');
@@ -2401,6 +3098,7 @@ function openReportModal(title, text, reportPath) {
   }
   document.getElementById('rmod-pre').textContent = text;
   document.getElementById('report-modal-backdrop').classList.remove('hidden');
+  pulseModal(document.getElementById('report-modal'));
   // Keep in session memory and surface as a persistent pill button
   sessionReports[title] = { text, reportPath, ts: Date.now() };
   _addOrUpdateSummaryPill(title);
@@ -2420,12 +3118,15 @@ function openSettings() {
     const mode = cfg.archive_mode || 'auto';
     document.querySelector(`input[name="archive-mode"][value="${mode}"]`).checked = true;
     document.getElementById('settings-custom-input').value = cfg.custom_archive || '';
+    const excluded = Array.isArray(cfg.excluded_dirs) ? cfg.excluded_dirs : [];
+    document.getElementById('settings-excluded-dirs').value = excluded.join('\n');
     _settingsUpdateUI(mode);
   }).catch(() => {
     document.querySelector('input[name="archive-mode"][value="auto"]').checked = true;
     _settingsUpdateUI('auto');
   });
   document.getElementById('settings-backdrop').classList.remove('hidden');
+  pulseModal(document.getElementById('settings-modal'));
 }
 function closeSettings() {
   document.getElementById('settings-backdrop').classList.add('hidden');
@@ -2450,7 +3151,12 @@ async function saveSettings() {
     const res  = await fetch('/api/settings', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ archive_mode: mode, custom_archive_dir: custom }),
+      body: JSON.stringify({
+        archive_mode: mode,
+        custom_archive_dir: custom,
+        excluded_dirs: document.getElementById('settings-excluded-dirs').value
+          .split('\n').map(s => s.trim()).filter(Boolean),
+      }),
     });
     const data = await res.json();
     if (data.ok) {
@@ -2470,6 +3176,7 @@ async function saveSettings() {
 /* ── Welcome modal ─────────────────────────────────────────────────────────── */
 function openWelcome() {
   document.getElementById('welcome-backdrop').classList.remove('hidden');
+  pulseModal(document.getElementById('welcome-modal'));
   // Populate the archive tree with the real drive path if config is loaded
   fetch('/api/config').then(r => r.json()).then(cfg => {
     if (cfg.archive_root) {
@@ -2504,6 +3211,138 @@ function welcomeDenyPermission() {
   document.getElementById('welcome-letsgo-btn').disabled = false;
   document.getElementById('welcome-letsgo-btn').textContent = 'Continue without folders';
 }
+
+async function interruptScan() {
+  if (!isRunning) return;
+  if (!confirm('Ask the scan to stop gracefully?\n\nThe process will receive a stop signal and try to clean up. The server will remain running.')) return;
+  const btn = document.getElementById('scan-bar-interrupt');
+  btn.textContent = '⏸ Stopping…'; btn.disabled = true;
+  try {
+    await fetch('/api/cancel', { method: 'POST' });
+    appendLog('⏸ Interrupt signal sent — waiting for process to exit…', 'warn');
+  } catch(e) {
+    appendLog('[ERROR] Could not send interrupt signal.', 'error');
+    btn.textContent = '⏸ Interrupt'; btn.disabled = false;
+  }
+}
+
+async function emergencyStop() {
+  if (!isRunning) return;
+  if (!confirm('Force-kill the scan immediately?\n\nThis will hard-terminate the process. Any in-progress writes may be incomplete.\n\nThe server will remain running.')) return;
+  const btn = document.getElementById('scan-bar-emergency');
+  btn.textContent = '⚡ Killing…'; btn.disabled = true;
+  try {
+    await fetch('/api/cancel/force', { method: 'POST' });
+    appendLog('⚡ Emergency stop — process force-killed. Server is still running.', 'error');
+  } catch(e) {
+    appendLog('[ERROR] Could not send kill signal.', 'error');
+    btn.textContent = '⚡ Emergency Stop'; btn.disabled = false;
+  }
+}
+
+/* ── Homebrew update banner ─────────────────────────────────────────────────── */
+
+let _brewDismissed = false;
+
+async function brewCheckStatus() {
+  try {
+    const res = await fetch('/api/brew/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    _brewRender(data);
+  } catch (_) {}
+}
+
+async function brewCheckNow() {
+  document.getElementById('brew-msg').textContent = 'Checking for Homebrew updates…';
+  document.getElementById('brew-banner').style.display = 'flex';
+  _brewDismissed = false;
+  try {
+    const res = await fetch('/api/brew/check', { method: 'POST' });
+    const data = await res.json();
+    _brewRender(data);
+  } catch (e) {
+    document.getElementById('brew-msg').textContent = 'Could not reach brew — check manually.';
+  }
+}
+
+function _brewRender(data) {
+  const banner   = document.getElementById('brew-banner');
+  const msgEl    = document.getElementById('brew-msg');
+  if (_brewDismissed) return;
+  const outdated = data.outdated || [];
+  if (!outdated.length) {
+    banner.style.display = 'none';
+    return;
+  }
+  const list = outdated.map(p =>
+    `<strong>${p.name}</strong> ${p.installed} → ${p.current}`
+  ).join(' &nbsp;·&nbsp; ');
+  msgEl.innerHTML = `Homebrew updates available for SuperBox packages: ${list}`;
+  banner.style.display = 'flex';
+}
+
+function brewDismiss() {
+  _brewDismissed = true;
+  document.getElementById('brew-banner').style.display = 'none';
+}
+
+/* ── SuperBox update checker ───────────────────────────────────────────────── */
+let _superboxUpdateDismissed = false;
+
+async function superboxUpdateCheck() {
+  try {
+    const res = await fetch('/api/update/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    _superboxUpdateRender(data);
+  } catch (_) {}
+}
+
+function _superboxUpdateRender(data) {
+  if (_superboxUpdateDismissed) return;
+  if (!data.update_available) return;
+
+  const banner  = document.getElementById('superbox-update-banner');
+  const msgEl   = document.getElementById('superbox-update-msg');
+  const linkEl  = document.getElementById('superbox-update-link');
+  const latest  = data.latest_version || 'a newer version';
+  const current = data.current_version;
+
+  if (data.is_git_install) {
+    msgEl.textContent = current
+      ? `SuperBox ${latest} is available (you have ${current}) — restart to update.`
+      : `SuperBox ${latest} is available — restart to update.`;
+    linkEl.style.display = 'none';
+  } else {
+    msgEl.textContent = current
+      ? `SuperBox ${latest} is available (you have an older version).`
+      : `A new version of SuperBox (${latest}) is available.`;
+    if (data.release_url) {
+      linkEl.href = data.release_url;
+      linkEl.style.display = '';
+    } else {
+      linkEl.style.display = 'none';
+    }
+  }
+
+  banner.style.display = 'flex';
+}
+
+function superboxUpdateDismiss() {
+  _superboxUpdateDismissed = true;
+  document.getElementById('superbox-update-banner').style.display = 'none';
+}
+
+function runBrewUpgrade() {
+  brewDismiss();
+  runCommand('/api/run/brew-upgrade', 'Homebrew — Upgrade SuperBox Packages');
+}
+
+// Check on page load (non-blocking — banners appear only if updates found)
+brewCheckStatus();
+// Delay the update check slightly so the brew check fires first
+setTimeout(superboxUpdateCheck, 1000);
 
 async function quitSuperBox() {
   const msg = isRunning
@@ -2548,12 +3387,24 @@ async function refreshStatus() {
 }
 refreshStatus();
 setInterval(refreshStatus, 6000);
-// Show welcome on first visit
+// First visit: show welcome (one-time onboarding)
+// Every visit after: show the lightweight path picker
 if (!localStorage.getItem('superbox-welcome-seen')) {
   openWelcome();
-} else if (localStorage.getItem('superbox-archive-permission') === 'granted') {
+} else {
   // Re-run archive setup silently on every launch in case drive was remounted
-  fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
+  if (localStorage.getItem('superbox-archive-permission') === 'granted') {
+    fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
+  }
+  document.getElementById('path-backdrop').classList.remove('hidden');
+  pulseModal(document.getElementById('path-modal-box'));
+}
+
+function choosePath(mode) {
+  document.getElementById('path-backdrop').classList.add('hidden');
+  if (mode === 'pipeline') {
+    openPipelineWizard();
+  }
 }
 
 /* ── Config prefill + localStorage persistence ─────────────────────────────── */
@@ -2572,12 +3423,13 @@ async function prefillDefaults() {
   // Fields that map to the music root
   const rootFields = [
     'process-path','import-path',
-    'link-path','normalize-path','dupes-path','relocate-new','convert-path',
+    'link-path','normalize-path','dupes-path','relocate-new','convert-path','organize-target',
+    'novelty-dest',
   ];
   // Fields that are optional overrides (audit root) — prefill but don't force
   const optionalFields = ['audit-root'];
   // Relocate old root — user-specific, just restore from localStorage
-  const freeFields = ['relocate-old','dupes-output'];
+  const freeFields = ['relocate-old','dupes-output','novelty-source'];
 
   // Restore any previously saved value for every tracked field first
   [...rootFields, ...optionalFields, ...freeFields].forEach(id => {
@@ -2652,6 +3504,11 @@ let scanWarnings = 0;
 
 function showScanBar(title) {
   scanWarnings = 0;
+  // Reset interrupt/emergency buttons for fresh use
+  const ib = document.getElementById('scan-bar-interrupt');
+  ib.textContent = '⏸ Interrupt'; ib.disabled = false; ib.style.display = 'inline-block';
+  const eb = document.getElementById('scan-bar-emergency');
+  eb.textContent = '⚡ Emergency Stop'; eb.disabled = false; eb.style.display = 'inline-block';
   document.getElementById('sb-remaining').textContent = '—';
   document.getElementById('sb-clean').textContent     = '0';
   document.getElementById('sb-edited').textContent    = '0';
@@ -2672,6 +3529,8 @@ function updateScanBar(p) {
 }
 function finishScanBar() {
   document.getElementById('scan-bar-spinner').classList.remove('active');
+  document.getElementById('scan-bar-interrupt').style.display = 'none';
+  document.getElementById('scan-bar-emergency').style.display = 'none';
   document.getElementById('scan-bar-dismiss').style.display = 'inline-block';
 }
 function dismissScanBar() {
@@ -2702,7 +3561,7 @@ function reopenLog() {
 function setSpinner(on) {
   document.getElementById('log-spinner').classList.toggle('active', on);
 }
-const _MAX_LOG_LINES = 600;
+const _MAX_LOG_LINES = 800;
 let   _logScrollPending = false;
 
 function appendLog(text, cls = '') {
@@ -2756,7 +3615,7 @@ function toggleLog() {
 }
 
 /* ── SSE runner ────────────────────────────────────────────────────────────── */
-function runCommand(url, logTitle, onDone, useBar = true, showPrefilter = false, reportTarget = null) {
+function runCommand(url, logTitle, onDone, useBar = true, showPrefilter = false) {
   if (isRunning) return;
   initLog(logTitle);
   showScanBar(logTitle);
@@ -2766,7 +3625,7 @@ function runCommand(url, logTitle, onDone, useBar = true, showPrefilter = false,
   appendLog(`▸ ${logTitle}`, 'dim');
   appendLog('', 'dim');
 
-  // Report block capture — detect ═══ ... ═══ blocks in the CLI output
+  // Report block capture — delimited by SUPERBOX_REPORT_BEGIN / SUPERBOX_REPORT_END
   let reportBuffer = [];
   let inReport = false;
   let capturedReportPath = null;   // set by SUPERBOX_REPORT_PATH: line
@@ -2778,24 +3637,20 @@ function runCommand(url, logTitle, onDone, useBar = true, showPrefilter = false,
     if (data.line !== undefined) {
       const line = data.line;
 
-      // Detect report block boundaries (═══ TITLE ═══ opener / ═══...═══ closer)
-      if (/^═{3,}/.test(line)) {
-        if (!inReport) {
-          // Opening line — start capture
-          inReport = true;
-          reportBuffer = [line];
-        } else {
-          // Closing line — end capture
-          reportBuffer.push(line);
-          inReport = false;
-        }
-      } else if (inReport) {
-        reportBuffer.push(line);
-      }
+      // Detect report block boundaries
+      if (line === 'SUPERBOX_REPORT_BEGIN') { inReport = true; reportBuffer = []; return; }
+      if (line === 'SUPERBOX_REPORT_END')   { inReport = false; return; }
+      if (inReport) reportBuffer.push(line);
 
       // Machine-readable report path — capture silently, don't echo to log
       if (line.startsWith('SUPERBOX_REPORT_PATH: ')) {
         capturedReportPath = line.slice(22).trim();
+        return;
+      }
+      // Physical scan JSON path — show subtle note in log
+      if (line.startsWith('SUPERBOX_PHYSICAL_SCAN: ')) {
+        const physPath = line.slice(24).trim();
+        appendLog(`  📁 Physical scan saved → ${physPath}`);
         return;
       }
       // Structured progress — update scan bar, don't echo to log
@@ -2890,11 +3745,13 @@ function setAllButtons(disabled) {
 
 /* ── Individual command runners ────────────────────────────────────────────── */
 function runAudit() {
-  const root = document.getElementById('audit-root').value.trim();
-  const params = root ? `?root=${encodeURIComponent(root)}` : '';
-  const el = document.getElementById('audit-result');
-  if (el) el.classList.add('hidden');
-  runCommand(`/api/run/audit${params}`, 'Audit — Library Health Check', null, true, false, 'audit-result');
+  const root       = document.getElementById('audit-root').value.trim();
+  const savePhys   = document.getElementById('audit-save-physical') &&
+                     document.getElementById('audit-save-physical').checked ? '1' : '0';
+  const p = new URLSearchParams();
+  if (root) p.set('root', root);
+  p.set('save_physical', savePhys);
+  runCommand(`/api/run/audit?${p.toString()}`, 'Audit — Database + Physical Scan', null, true);
 }
 
 
@@ -2908,7 +3765,7 @@ function runProcess() {
   p.set('no_normalize', '1');  // Step 2 is tags-only; normalize is Step 5
   const el = document.getElementById('process-result');
   if (el) el.classList.add('hidden');
-  runCommand(`/api/run/process?${p}`, 'Tag Tracks — BPM & Key Detection', null, true, false, 'process-result');
+  runCommand(`/api/run/process?${p}`, 'Tag Tracks — BPM & Key Detection', null, true, false);
 }
 
 function runNormalize() {
@@ -2921,8 +3778,13 @@ function runNormalize() {
     'Continue?'
   );
   if (!confirmed) return;
-  const p = new URLSearchParams({ path });
-  runCommand(`/api/run/process?${p}`, 'Normalize — Loudness to −8.0 LUFS', null, true);
+  // no_bpm + no_key: normalize step is loudness-only; tag detection runs in Step 2
+  const workers = document.getElementById('normalize-workers')?.value || '4';
+  const p = new URLSearchParams({ path, no_bpm: '1', no_key: '1' });
+  if (parseInt(workers) > 1) p.set('workers', workers);
+  const el = document.getElementById('normalize-result');
+  if (el) el.classList.add('hidden');
+  runCommand(`/api/run/process?${p}`, 'Normalize — Loudness to −8.0 LUFS', null, true, false);
 }
 
 function runImportDry() {
@@ -2973,49 +3835,813 @@ function runConvert() {
   const format = document.getElementById('convert-format').value.trim();
   if (!path) { alert('Enter a music folder path first.'); return; }
   if (!format) { alert('Select a target format.'); return; }
+  const workers = document.getElementById('convert-workers')?.value || '4';
   const p = new URLSearchParams({ path, format });
+  if (parseInt(workers) > 1) p.set('workers', workers);
   runCommand(`/api/run/convert?${p}`, `Converting Audio Files to ${format.toUpperCase()}`);
 }
 
+/* ── Pipeline Builder ──────────────────────────────────────────────────────── */
+
+const PIPE_STEPS = {
+  audit:      { name: 'Library Audit',      icon: '/static/icon-audit.png',          desc: 'DB snapshot + physical filesystem inventory' },
+  process:    { name: 'Tag Tracks',         icon: '/static/icon-tag.png',            desc: 'Write BPM and Key into each file' },
+  duplicates: { name: 'Find Duplicates',    icon: '/static/icon-find-duplicate.png', desc: 'Scan for files that are the same recording' },
+  prune:      { name: 'Prune Duplicates',   icon: '/static/icon-prune.png',          desc: 'Remove copies found by Find Duplicates' },
+  relocate:   { name: 'Fix Broken Paths',   icon: '/static/icon-move.png',           desc: 'Update RekordBox after files have moved' },
+  import:     { name: 'Import Tracks',      icon: '/static/icon-import.png',         desc: 'Add new audio files to RekordBox database' },
+  link:       { name: 'Link Playlists',     icon: '/static/icon-link.png',           desc: 'Connect tracks to playlists by folder name' },
+  normalize:  { name: 'Balance Loudness',   icon: '/static/icon-normalize.png',      desc: 'Bring every track to the same volume' },
+  convert:    { name: 'Convert Format',     icon: '/static/icon-convert.png',        desc: 'Change files to AIFF, MP3, WAV, or FLAC' },
+  organize:   { name: 'Organize Library',   icon: '/static/icon-organizer.png',      desc: 'Move files into Artist / Album / Track' },
+  novelty:    { name: 'Novelty Scan',       icon: '/static/icon-novelty.png',        desc: 'Copy unique tracks from source to home library' },
+};
+
+const RECOMMENDED = ['process','duplicates','prune','relocate','import','link','organize'];
+
+let pipelineSteps = [];   // [{id, type}]
+let pipeUid = 0;
+
+/* ══ Pipeline Wizard ═════════════════════════════════════════════════════════ */
+
+function openPipelineWizard() {
+  const backdrop = document.getElementById('pipeline-wizard-backdrop');
+  backdrop.classList.remove('hidden');
+  // Reset to phase 1
+  document.getElementById('pipe-wiz-p1').style.opacity = '1';
+  document.getElementById('pipe-wiz-p1').classList.remove('hidden');
+  document.getElementById('pipe-wiz-p2').classList.add('hidden');
+  document.getElementById('pipeline-wizard').classList.remove('wizard-wide');
+  pulseModal(document.getElementById('pipeline-wizard'));
+}
+
+function closePipelineWizard() {
+  document.getElementById('pipeline-wizard-backdrop').classList.add('hidden');
+}
+
+function pipeWizNext() {
+  if (pipelineSteps.length === 0) {
+    alert('Add at least one step to the pipeline first.');
+    return;
+  }
+  const p1 = document.getElementById('pipe-wiz-p1');
+  const p2 = document.getElementById('pipe-wiz-p2');
+  const wiz = document.getElementById('pipeline-wizard');
+
+  // Fade out phase 1
+  p1.style.transition = 'opacity .2s';
+  p1.style.opacity = '0';
+
+  setTimeout(() => {
+    p1.classList.add('hidden');
+    p1.style.opacity = '';
+    p1.style.transition = '';
+
+    // Widen the modal
+    wiz.classList.add('wizard-wide');
+
+    // Build and show phase 2
+    pipeWizBuildConfigs();
+    p2.classList.remove('hidden');
+    p2.style.opacity = '0';
+    p2.style.transition = 'opacity .25s';
+
+    // Sync checkboxes
+    document.getElementById('wiz-dry-run-2').checked   = document.getElementById('wiz-dry-run').checked;
+    document.getElementById('wiz-confirm-steps-2').checked = document.getElementById('wiz-confirm-steps').checked;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        p2.style.opacity = '1';
+        setTimeout(() => { p2.style.transition = ''; p2.style.opacity = ''; }, 280);
+      });
+    });
+  }, 220);
+}
+
+function pipeWizBack() {
+  const p1 = document.getElementById('pipe-wiz-p1');
+  const p2 = document.getElementById('pipe-wiz-p2');
+  const wiz = document.getElementById('pipeline-wizard');
+
+  p2.style.transition = 'opacity .2s';
+  p2.style.opacity = '0';
+
+  setTimeout(() => {
+    p2.classList.add('hidden');
+    p2.style.opacity = '';
+    p2.style.transition = '';
+    wiz.classList.remove('wizard-wide');
+    p1.classList.remove('hidden');
+    p1.style.opacity = '0';
+    p1.style.transition = 'opacity .25s';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        p1.style.opacity = '1';
+        setTimeout(() => { p1.style.transition = ''; p1.style.opacity = ''; }, 280);
+      });
+    });
+  }, 220);
+}
+
+function pipeWizRun() {
+  if (pipelineSteps.length === 0) return;
+  // Cache configs on each step object
+  pipelineSteps.forEach(s => {
+    s._config = _pipelineReadConfig(s);
+    _savePipeCfg(s.type, s._config);
+  });
+  const dryRun     = document.getElementById('wiz-dry-run-2').checked;
+  const confirmMode = document.getElementById('wiz-confirm-steps-2').checked;
+  closePipelineWizard();
+  runPipeline(dryRun, confirmMode);
+}
+
+function pipeWizBuildConfigs() {
+  const stack   = document.getElementById('pipe-wiz-stack');
+  const configs = document.getElementById('pipe-wiz-configs');
+  stack.innerHTML = '';
+  configs.innerHTML = '';
+
+  pipelineSteps.forEach((step, i) => {
+    const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/SRB_LOGO.png', desc: '' };
+    const saved = _loadPipeCfg(step.type);
+
+    // Stack item
+    const si = document.createElement('div');
+    si.className = 'pipe-wiz-stack-item' + (i === 0 ? ' active' : '');
+    si.id = `pipe-wiz-si-${i}`;
+    si.onclick = () => pipeWizSelectStep(i);
+    si.innerHTML = `
+      <div class="pipe-step-num" style="width:20px;height:20px;font-size:.68rem;flex-shrink:0">${i + 1}</div>
+      <img src="${def.icon}" style="width:16px;height:16px;object-fit:contain;flex-shrink:0">
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${def.name}</span>`;
+    stack.appendChild(si);
+
+    // Config section
+    const sec = document.createElement('div');
+    sec.className = 'pipe-cfg-section';
+    sec.id = `pipe-cfg-sec-${i}`;
+    sec.innerHTML = `
+      <div class="pipe-cfg-section-header">
+        <div class="pipe-step-num" style="flex-shrink:0">${i + 1}</div>
+        <img src="${def.icon}" style="width:20px;height:20px;object-fit:contain">
+        <strong>${def.name}</strong>
+        <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;margin-left:4px">— ${def.desc}</span>
+      </div>
+      ${_pipeWizConfigHTML(step, saved)}`;
+    configs.appendChild(sec);
+  });
+}
+
+function pipeWizSelectStep(i) {
+  document.querySelectorAll('.pipe-wiz-stack-item').forEach((el, j) => {
+    el.classList.toggle('active', j === i);
+  });
+  const sec = document.getElementById(`pipe-cfg-sec-${i}`);
+  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function _pipeWizConfigHTML(step, saved) {
+  const id = step.id;
+  const v  = (field, fallback) => (saved && saved[field] !== undefined) ? saved[field] : (fallback || '');
+
+  const pathRow = (field, label, placeholder) => `
+    <div class="pipe-cfg-field">
+      <label class="pipe-cfg-label">${label}</label>
+      <input type="text" class="pipe-cfg-input" id="wcfg-${id}-${field}"
+             value="${v(field)}" placeholder="${placeholder}">
+    </div>`;
+
+  const workersRow = () => `
+    <div class="pipe-cfg-field" style="width:100px">
+      <label class="pipe-cfg-label">Workers</label>
+      <input type="number" class="pipe-cfg-input pipe-cfg-num" id="wcfg-${id}-workers"
+             value="${v('workers', 1)}" min="1" max="8">
+    </div>`;
+
+  switch (step.type) {
+    case 'audit':
+      return pathRow('root', 'Music root (optional)', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'process':
+      return pathRow('path', 'Music root', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    case 'normalize':
+      return pathRow('path', 'Music root', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    case 'duplicates':
+      return pathRow('path', 'Scan path', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    case 'prune':
+      return `<p class="pipe-cfg-note">Prune uses the duplicate report from the Find Duplicates step above — no additional configuration needed.</p>`;
+
+    case 'convert':
+      return pathRow('path', 'Files path', '/Volumes/DJMT/DJMT PRIMARY') + `
+        <div class="pipe-cfg-field-row">
+          <div class="pipe-cfg-field">
+            <label class="pipe-cfg-label">Output format</label>
+            <select class="pipe-cfg-input" id="wcfg-${id}-format">
+              ${['aiff','mp3','wav','flac'].map(f =>
+                `<option value="${f}" ${v('format','aiff') === f ? 'selected' : ''}>${f.toUpperCase()}</option>`
+              ).join('')}
+            </select>
+          </div>
+          ${workersRow()}
+        </div>`;
+
+    case 'relocate':
+      return pathRow('old_root', 'Old path prefix', '/Volumes/OldDrive/Music') +
+             pathRow('new_root', 'New path prefix', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'import':
+      return pathRow('path', 'Import from', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'link':
+      return pathRow('path', 'Library path', '/Volumes/DJMT/DJMT PRIMARY');
+
+    case 'organize':
+      return pathRow('source', 'Source path', '/Volumes/DJMT/DJMT PRIMARY') +
+             pathRow('target', 'Target path', '/Volumes/DJMT/DJMT PRIMARY') + `
+        <div class="pipe-cfg-field-row">
+          <div class="pipe-cfg-field">
+            <label class="pipe-cfg-label">Mode</label>
+            <select class="pipe-cfg-input" id="wcfg-${id}-mode">
+              <option value="assimilate" ${v('mode','assimilate') === 'assimilate' ? 'selected' : ''}>Assimilate</option>
+              <option value="integrate"  ${v('mode','assimilate') === 'integrate'  ? 'selected' : ''}>Integrate</option>
+            </select>
+          </div>
+          ${workersRow()}
+        </div>`;
+
+    case 'novelty':
+      return pathRow('source', 'Source drive', '/Volumes/Passport') +
+             pathRow('dest',   'Home library', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+
+    default:
+      return `<p class="pipe-cfg-note">No configuration needed for this step.</p>`;
+  }
+}
+
+function _savePipeCfg(type, cfg) {
+  try { localStorage.setItem(`sb_pipe_cfg_${type}`, JSON.stringify(cfg)); } catch(_) {}
+}
+
+function _loadPipeCfg(type) {
+  try { return JSON.parse(localStorage.getItem(`sb_pipe_cfg_${type}`)) || {}; } catch(_) { return {}; }
+}
+
+function pipelineAddStep(type) {
+  pipelineSteps.push({ id: ++pipeUid, type });
+  pipelineRender();
+  // Flash the clicked button
+  const btn = [...document.querySelectorAll('#pipe-wiz-p1 .pipe-action-btn')]
+    .find(b => (b.getAttribute('onclick') || '').includes(`'${type}'`));
+  if (btn) {
+    btn.classList.remove('pipe-added');
+    void btn.offsetWidth;
+    btn.classList.add('pipe-added');
+    btn.addEventListener('animationend', () => btn.classList.remove('pipe-added'), { once: true });
+  }
+}
+
+function pipelineRemoveStep(id) {
+  pipelineSteps = pipelineSteps.filter(s => s.id !== id);
+  pipelineRender();
+}
+
+function pipelineMoveStep(id, dir) {
+  const i = pipelineSteps.findIndex(s => s.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= pipelineSteps.length) return;
+  [pipelineSteps[i], pipelineSteps[j]] = [pipelineSteps[j], pipelineSteps[i]];
+  pipelineRender();
+}
+
+function pipelineClear() {
+  pipelineSteps = [];
+  pipelineRender();
+  document.getElementById('pipe-recommended-note').classList.add('hidden');
+}
+
+function pipelineLoadRecommended() {
+  pipelineSteps = RECOMMENDED.map(type => ({ id: ++pipeUid, type }));
+  pipelineRender();
+  document.getElementById('pipe-recommended-note').classList.remove('hidden');
+}
+
+function pipelineRender() {
+  const queue   = document.getElementById('pipeline-queue');
+  const empty   = document.getElementById('pipe-empty-msg');
+  const note    = document.getElementById('pipe-config-note');
+
+  // Remove only step elements — leave pipe-empty-msg in the DOM so getElementById finds it next time
+  queue.querySelectorAll('.pipe-step').forEach(el => el.remove());
+
+  if (pipelineSteps.length === 0) {
+    if (empty) empty.classList.remove('hidden');
+    if (note) note.classList.add('hidden');
+    return;
+  }
+
+  if (empty) empty.classList.add('hidden');
+  if (note) note.classList.remove('hidden');
+
+  pipelineSteps.forEach((step, i) => {
+    const def = PIPE_STEPS[step.type] || { name: step.type, icon: '⚙', desc: '' };
+    const el  = document.createElement('div');
+    el.className = 'pipe-step';
+    el.id = `pipe-step-${step.id}`;
+    el.innerHTML = `
+      <div class="pipe-step-num">${i + 1}</div>
+      <div class="pipe-step-body">
+        <div class="pipe-step-name"><img src="${def.icon}" style="width:16px;height:16px;object-fit:contain;vertical-align:middle;margin-right:5px">${def.name}</div>
+        <div class="pipe-step-desc">${def.desc}</div>
+      </div>
+      <div class="pipe-step-controls">
+        <button onclick="pipelineMoveStep(${step.id}, -1)" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button onclick="pipelineMoveStep(${step.id},  1)" title="Move down" ${i === pipelineSteps.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="pipe-remove" onclick="pipelineRemoveStep(${step.id})" title="Remove">✕</button>
+      </div>`;
+    queue.appendChild(el);
+  });
+}
+
+function _pipelineReadConfig(step, extraCsv) {
+  /* Read from wizard config inputs (wcfg-{stepId}-{field}).
+     step: full pipelineStep object {id, type} or legacy string type. */
+  const id   = (typeof step === 'object') ? step.id : null;
+  const type = (typeof step === 'object') ? step.type : step;
+  const get  = field => (id ? document.getElementById(`wcfg-${id}-${field}`)?.value?.trim() : '') || '';
+  const getN = (field, def) => parseInt((id ? document.getElementById(`wcfg-${id}-${field}`)?.value : '') || def);
+
+  switch (type) {
+    case 'audit':
+      return { root: get('root') };
+    case 'import':
+      return { path: get('path') };
+    case 'link':
+      return { path: get('path') };
+    case 'organize':
+      return {
+        sources:       [get('source')].filter(Boolean),
+        target:        get('target'),
+        mode:          get('mode') || 'assimilate',
+        mix_threshold: get('mix_threshold') || '15',
+        workers:       getN('workers', 1),
+      };
+    case 'process':
+      return {
+        path:         get('path'),
+        workers:      getN('workers', 1),
+        no_normalize: true,
+      };
+    case 'normalize':
+      return {
+        path:    get('path'),
+        workers: getN('workers', 1),
+      };
+    case 'duplicates':
+      return {
+        path:    get('path'),
+        workers: getN('workers', 1),
+      };
+    case 'prune':
+      return extraCsv ? { csv: extraCsv } : {};
+    case 'convert':
+      return {
+        path:    get('path'),
+        format:  get('format') || 'aiff',
+        workers: getN('workers', 1),
+      };
+    case 'relocate':
+      return {
+        old_root: get('old_root'),
+        new_root: get('new_root'),
+      };
+    case 'novelty':
+      return {
+        source:  get('source'),
+        dest:    get('dest'),
+        workers: getN('workers', 1),
+      };
+    default:
+      return {};
+  }
+}
+
+/* ── Pipeline confirm-gate state ──────────────────────────────────────────── */
+let _pipeGateResolve = null;   // resolves with action string: 'finish' | 'redo' | 'skip' | 'stop'
+
+function pipeGateAction(action) {
+  document.getElementById('pipe-confirm-gate').style.display = 'none';
+  if (_pipeGateResolve) { _pipeGateResolve(action); _pipeGateResolve = null; }
+}
+// Legacy aliases for any lingering calls
+function pipeConfirmContinue() { pipeGateAction('finish'); }
+function pipeConfirmStop()     { pipeGateAction('stop');   }
+
+function _showPipeGate(succeeded, completedName, nextName, summaryLines) {
+  /* Returns a Promise that resolves with an action string. */
+  const gate     = document.getElementById('pipe-confirm-gate');
+  const icon     = document.getElementById('pipe-gate-icon');
+  const title    = document.getElementById('pipe-gate-title');
+  const body     = document.getElementById('pipe-gate-body');
+  const btnFinish = document.getElementById('pipe-btn-finish');
+  const btnRedo   = document.getElementById('pipe-btn-redo');
+  const btnSkip   = document.getElementById('pipe-btn-skip');
+  const nextLabel = document.getElementById('pipe-gate-next-label');
+
+  const nextText = nextName ? ` → ${nextName}` : '';
+
+  if (succeeded) {
+    gate.style.setProperty('--pipe-gate-border', 'rgba(52,211,153,.35)');
+    gate.style.setProperty('--pipe-gate-bg',     'rgba(52,211,153,.05)');
+    icon.textContent  = '✓';
+    title.textContent = `"${completedName}" complete`;
+    body.textContent  = summaryLines.length
+      ? summaryLines.filter(l => l.trim()).slice(-5).join('  ·  ')
+      : 'Step finished successfully.';
+    btnFinish.textContent = nextName ? `Finish${nextText}` : 'Finish';
+    btnFinish.style.display = '';
+    btnRedo.style.display  = 'none';
+    btnSkip.style.display  = 'none';
+    nextLabel.textContent  = '';
+  } else {
+    gate.style.setProperty('--pipe-gate-border', 'rgba(239,68,68,.35)');
+    gate.style.setProperty('--pipe-gate-bg',     'rgba(239,68,68,.05)');
+    icon.textContent  = '⚠';
+    title.textContent = `"${completedName}" did not complete`;
+    body.textContent  = 'Step stopped or failed. Choose how to proceed:';
+    btnFinish.style.display = 'none';
+    btnRedo.style.display   = '';
+    btnSkip.textContent     = nextName ? `Skip${nextText}` : 'Skip';
+    btnSkip.style.display   = nextName ? '' : 'none';
+    nextLabel.textContent   = '';
+  }
+
+  gate.style.display = '';
+  return new Promise(resolve => { _pipeGateResolve = resolve; });
+}
+
+/* ── Run a single pipeline step via /api/run/pipeline ──────────────────────── */
+async function _runOnePipelineStep(step, dryRun, capturedCsv) {
+  /* Returns {exitCode, reportPath, outputLines} */
+  const stepWithCsv = {
+    ...step,
+    config: (step.type === 'prune' && capturedCsv) ? { csv: capturedCsv } : (step.config || {}),
+  };
+  const resp = await fetch('/api/run/pipeline', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ dry_run: dryRun, steps: [stepWithCsv] }),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+
+  const reader   = resp.body.getReader();
+  const decoder  = new TextDecoder();
+  let   buf      = '';
+  let   reportPath = null;
+  let   outputLines = [];
+  let   exitCode = 0;
+  let   inReport = false;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split('\n\n');
+    buf = parts.pop();
+    for (const part of parts) {
+      const dataLine = part.split('\n').find(l => l.startsWith('data: '));
+      if (!dataLine) continue;
+      try {
+        const ev = JSON.parse(dataLine.slice(6));
+        if (ev.step_start !== undefined) {
+          /* already logged by caller */
+        } else if (ev.step_end !== undefined) {
+          exitCode = ev.exit_code;
+        } else if (ev.line !== undefined) {
+          const line = ev.line;
+          if (line === 'SUPERBOX_REPORT_BEGIN')       { inReport = true; }
+          else if (line === 'SUPERBOX_REPORT_END')    { inReport = false; }
+          else if (line.startsWith('SUPERBOX_PROGRESS: ')) {
+            try { updateScanBar(JSON.parse(line.slice(19))); } catch(_) {}
+          } else if (line.startsWith('SUPERBOX_REPORT_PATH: ')) {
+            reportPath = line.slice(22).trim();
+          } else if (line.startsWith('SUPERBOX_PHYSICAL_SCAN: ')) {
+            appendLog(`  📁 Physical scan → ${line.slice(24).trim()}`, 'dim');
+          } else {
+            outputLines.push(line);
+            appendLog(line, classifyLine(line));
+          }
+        } else if (ev.done) {
+          exitCode = ev.exit_code || 0;
+        }
+      } catch (_) {}
+    }
+  }
+  return { exitCode, reportPath, outputLines };
+}
+
+async function runPipeline(dryRun = true, confirmMode = false) {
+  if (pipelineSteps.length === 0) {
+    alert('Add at least one step to the pipeline first.');
+    return;
+  }
+  if (isRunning) return;
+
+  /* dryRun and confirmMode are passed in from pipeWizRun() */
+  const label        = dryRun ? 'Pipeline — Dry Run (preview only)' : 'Running Pipeline';
+  const total        = pipelineSteps.length;
+
+  /* Reset step visual state */
+  pipelineSteps.forEach(s => {
+    const el = document.getElementById(`pipe-step-${s.id}`);
+    if (el) el.className = 'pipe-step';
+  });
+  document.getElementById('pipe-confirm-gate').style.display = 'none';
+
+  initLog(label);
+  showScanBar(label);
+  isRunning = true;
+  setSpinner(true);
+  setAllButtons(true);
+  appendLog(`▸ ${label}${confirmMode ? '  (confirm between steps)' : ''}`, 'dim');
+  appendLog('', 'dim');
+
+  let reportBuffer = [];
+  let capturedCsv  = null;   // last SUPERBOX_REPORT_PATH from a duplicates step
+
+  const finish = (exitCode, failedStep, stopped) => {
+    isRunning = false;
+    setSpinner(false);
+    setAllButtons(false);
+    finishScanBar();
+    document.getElementById('pipe-confirm-gate').style.display = 'none';
+    appendLog('', '');
+    if (stopped) {
+      appendLog('⏹ Pipeline stopped by user.', 'log-exit-fail');
+    } else if (failedStep) {
+      appendLog(`✗ Pipeline stopped — "${failedStep}" had an error.`, 'log-exit-fail');
+    } else if (exitCode === 0) {
+      appendLog(dryRun
+        ? '✓ Preview complete. Uncheck Dry Run and run again to execute.'
+        : '✓ Pipeline complete.', 'log-exit-ok');
+    } else {
+      appendLog(`✗ Exited with code ${exitCode}`, 'log-exit-fail');
+    }
+    if (reportBuffer.length > 0) {
+      sessionReports[label] = { text: reportBuffer.join('\n'), reportPath: null };
+      _addOrUpdateSummaryPill(label);
+    }
+  };
+
+  /* ── CONFIRM MODE: run one step at a time with gate between each ─────────── */
+  if (confirmMode) {
+    let i = 0;
+    while (i < pipelineSteps.length) {
+      const s    = pipelineSteps[i];
+      const def  = PIPE_STEPS[s.type] || { name: s.type, icon: '⚙', desc: '' };
+      const step = { type: s.type, name: def.name, config: {} };
+      const el   = document.getElementById(`pipe-step-${s.id}`);
+
+      if (el) el.className = 'pipe-step running';
+      appendLog('', '');
+      appendLog(`── Step ${i + 1} / ${total}: ${def.name} ──`, 'dim');
+
+      let result;
+      try {
+        result = await _runOnePipelineStep(step, dryRun, capturedCsv);
+      } catch (err) {
+        if (el) el.className = 'pipe-step failed';
+        appendLog('[Connection error] ' + err.message, 'error');
+        finish(1, def.name, false);
+        return;
+      }
+
+      if (el) el.className = result.exitCode === 0 ? 'pipe-step done' : 'pipe-step failed';
+      if (result.reportPath) capturedCsv = result.reportPath;
+
+      const succeeded = result.exitCode === 0;
+      const nextStep  = pipelineSteps[i + 1];
+      const nextName  = nextStep ? (PIPE_STEPS[nextStep.type] || { name: nextStep.type }).name : null;
+      const summaryLines = result.outputLines.filter(l => l.trim());
+
+      /* Show gate — returns 'finish' | 'redo' | 'skip' | 'stop' */
+      const action = await _showPipeGate(succeeded, def.name, nextName, summaryLines);
+
+      if (action === 'stop') {
+        finish(succeeded ? 0 : result.exitCode, null, true);
+        return;
+      } else if (action === 'redo') {
+        /* Re-do: mark step as pending again and restart the same index */
+        if (el) el.className = 'pipe-step';
+        appendLog(`↺ Re-doing "${def.name}"…`, 'dim');
+        continue;   // i stays the same
+      } else if (action === 'skip') {
+        /* Skip: advance past this step */
+        appendLog(`⤳ Skipped "${def.name}"`, 'dim');
+        i++;
+        continue;
+      } else {
+        /* finish: accept step result, advance to next */
+        i++;
+      }
+    }
+    finish(0, null, false);
+    return;
+  }
+
+  /* ── AUTO MODE: send all steps at once (original behaviour) ─────────────── */
+  const steps = pipelineSteps.map(s => ({
+    type:   s.type,
+    name:   (PIPE_STEPS[s.type] || {}).name || s.type,
+    config: s._config || {},
+  }));
+  let stepIdMap = {};
+  pipelineSteps.forEach((s, i) => { stepIdMap[i + 1] = `pipe-step-${s.id}`; });
+  let inReport = false;
+
+  try {
+    const resp = await fetch('/api/run/pipeline', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ dry_run: dryRun, steps }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      appendLog('Pipeline error: ' + (err.error || resp.statusText), 'error');
+      finish(1, null, false);
+      return;
+    }
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+
+      for (const part of parts) {
+        const dataLine = part.split('\n').find(l => l.startsWith('data: '));
+        if (!dataLine) continue;
+        try {
+          const ev = JSON.parse(dataLine.slice(6));
+          if (ev.step_start !== undefined) {
+            const el = document.getElementById(stepIdMap[ev.step_start]);
+            if (el) el.className = 'pipe-step running';
+            appendLog('', '');
+            appendLog(`── Step ${ev.step_start} / ${ev.total_steps}: ${ev.step_name} ──`, 'dim');
+          } else if (ev.step_end !== undefined) {
+            const el = document.getElementById(stepIdMap[ev.step_end]);
+            if (el) el.className = ev.exit_code === 0 ? 'pipe-step done' : 'pipe-step failed';
+          } else if (ev.line !== undefined) {
+            const line = ev.line;
+            if (line === 'SUPERBOX_REPORT_BEGIN')       { inReport = true; reportBuffer = []; }
+            else if (line === 'SUPERBOX_REPORT_END')    { inReport = false; }
+            else if (line.startsWith('SUPERBOX_PROGRESS: ')) {
+              try { updateScanBar(JSON.parse(line.slice(19))); } catch(_) {}
+            } else if (line.startsWith('SUPERBOX_REPORT_PATH: ')) {
+              /* silently capture */
+            } else if (line.startsWith('SUPERBOX_PHYSICAL_SCAN: ')) {
+              /* silently capture */
+            } else {
+              if (inReport) reportBuffer.push(line);
+              appendLog(line, classifyLine(line));
+            }
+          } else if (ev.done) {
+            finish(ev.exit_code || 0, ev.failed_step || null, false);
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    appendLog('[Connection error] ' + err.message, 'error');
+    finish(1, null, false);
+  }
+}
+
+function orgAddSource() {
+  const list = document.getElementById('organize-source-list');
+  const row  = document.createElement('div');
+  row.className = 'org-source-row';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+  row.innerHTML = `<input type="text" class="org-source-input" placeholder="/Volumes/AnotherDrive" style="flex:1"><button type="button" onclick="this.closest('.org-source-row').remove()" style="background:none;border:1px solid var(--border-hi);color:var(--text-dim);border-radius:var(--radius);padding:4px 9px;font-size:.8rem;cursor:pointer;flex-shrink:0;" title="Remove this source">✕</button>`;
+  list.appendChild(row);
+  const inp = row.querySelector('input');
+  setupDropZone(inp);
+  inp.focus();
+}
+
+function orgUpdateMode(val) {
+  const badge = document.getElementById('organize-risk-badge');
+  if (badge) {
+    if (val === 'integrate') {
+      badge.textContent = 'Copies Files';
+      badge.className   = 'risk-badge safe';
+    } else {
+      badge.textContent = 'Moves Files';
+      badge.className   = 'risk-badge warn';
+    }
+  }
+}
+
+function runOrganize() {
+  const sources  = Array.from(document.querySelectorAll('.org-source-input'))
+                        .map(i => i.value.trim()).filter(Boolean);
+  const target   = document.getElementById('organize-target').value.trim();
+  const dryRun   = document.getElementById('organize-dry-run').checked;
+  const workers  = document.getElementById('organize-workers')?.value || '1';
+  const threshold = document.getElementById('organize-mix-threshold')?.value || '15';
+  const mode     = document.getElementById('organize-mode')?.value || 'assimilate';
+  if (!sources.length) { alert('Enter at least one source folder path.'); return; }
+  if (!target) { alert('Enter a target (library root) folder path.'); return; }
+  const p = new URLSearchParams();
+  sources.forEach(s => p.append('source', s));
+  p.set('target', target);
+  if (!dryRun) p.set('no_dry_run', '1');
+  if (mode !== 'assimilate') p.set('mode', mode);
+  if (parseInt(workers) > 1) p.set('workers', workers);
+  if (threshold !== '15') p.set('mix_threshold', threshold);
+  const modeLabel = mode === 'integrate' ? 'Integration (copies only, source untouched)' : 'Assimilation (move + clean source)';
+  const label = dryRun ? `Organize — Dry Run · ${modeLabel}` : `Organize — ${modeLabel}`;
+  runCommand(`/api/run/organize?${p}`, label);
+}
+
+/* ── Novelty Scanner ───────────────────────────────────────────────────────── */
+function runNovelty() {
+  const source  = document.getElementById('novelty-source').value.trim();
+  const dest    = document.getElementById('novelty-dest').value.trim();
+  const dryRun  = document.getElementById('novelty-dry-run').checked;
+  if (!source) { alert('Enter a source drive or folder path.'); return; }
+  if (!dest)   { alert('Enter a destination (home library) path.'); return; }
+  const p = new URLSearchParams();
+  p.set('source', source);
+  p.set('dest', dest);
+  if (!dryRun) p.set('no_dry_run', '1');
+  const label = dryRun
+    ? 'Novelty Scan — Dry Run (nothing will be copied)'
+    : 'Novelty Scan — Copying novel tracks to destination';
+  runCommand(`/api/run/novelty?${p}`, label);
+}
+
 /* ── Prune Duplicates ──────────────────────────────────────────────────────── */
-let pruneGroups    = [];          // loaded from CSV
-let pruneSelected  = new Set();   // file_paths checked for removal
-let saState        = null;        // 'best' | 'lower' | null
+let pruneGroups      = [];          // current page's groups
+let pruneSelected    = new Set();   // file_paths checked for removal
+let saState          = null;        // 'best' | 'lower' | null
+let prunePage        = 0;
+let prunePageSize    = 200;
+let pruneTotalGroups = 0;
+let pruneTotalRemove = 0;
+let pruneCsvPath     = '';
 
 async function loadPruneReport() {
-  const csvPath = document.getElementById('prune-csv-path').value.trim();
-  const url = '/api/duplicates/load' + (csvPath ? '?csv_path=' + encodeURIComponent(csvPath) : '');
+  pruneCsvPath = document.getElementById('prune-csv-path').value.trim();
+  prunePage    = 0;
+  pruneSelected.clear();
+  saState = null;
 
   const btn = document.querySelector('[onclick="loadPruneReport()"]');
   btn.disabled = true;
   btn.textContent = 'Loading…';
 
   try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (!res.ok) { alert('Could not load report:\n' + data.error); return; }
-
-    pruneGroups   = data.groups;
-    pruneSelected = new Set();
-    saState       = null;
-
-    // Default: pre-select all lower-quality copies
-    pruneGroups.forEach(g =>
-      g.entries.filter(e => e.action === 'REVIEW_REMOVE')
-               .forEach(e => pruneSelected.add(e.file_path))
-    );
-    saState = 'lower';
-
-    _renderPruneGroups();
-    document.getElementById('prune-review-area').style.display = 'block';
-    _updateSaButtons();
-    _updatePruneSummary();
+    await _loadPrunePage(0);
+    // Auto-select all lower-quality copies across the full report
+    await selectAllLower();
   } catch (err) {
     alert('Error loading report: ' + err);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Load Report';
   }
+}
+
+async function _loadPrunePage(page) {
+  let url = `/api/duplicates/load?page=${page}&per_page=${prunePageSize}`;
+  if (pruneCsvPath) url += '&csv_path=' + encodeURIComponent(pruneCsvPath);
+
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) { alert('Could not load report:\n' + data.error); return; }
+
+  pruneGroups      = data.groups;
+  prunePage        = data.page;
+  pruneTotalGroups = data.total_groups;
+  if (data.total_remove != null) pruneTotalRemove = data.total_remove;
+
+  _renderPruneGroups();
+  _renderPrunePagination();
+  document.getElementById('prune-review-area').style.display = 'block';
+  _syncCheckboxes();
+  _updateSaButtons();
+  _updatePruneSummary();
 }
 
 function _renderPruneGroups() {
@@ -3078,28 +4704,55 @@ function togglePruneFile(path, checked) {
   _updatePruneSummary();
 }
 
-function selectAllBest() {
-  pruneSelected.clear();
-  pruneGroups.forEach(g =>
-    g.entries.filter(e => e.action === 'KEEP')
-             .forEach(e => pruneSelected.add(e.file_path))
-  );
-  saState = 'best';
-  _syncCheckboxes();
-  _updateSaButtons();
-  _updatePruneSummary();
+async function _fetchAllPaths() {
+  let url = '/api/duplicates/remove-paths';
+  if (pruneCsvPath) url += '?csv_path=' + encodeURIComponent(pruneCsvPath);
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
 }
 
-function selectAllLower() {
-  pruneSelected.clear();
-  pruneGroups.forEach(g =>
-    g.entries.filter(e => e.action === 'REVIEW_REMOVE')
-             .forEach(e => pruneSelected.add(e.file_path))
-  );
-  saState = 'lower';
-  _syncCheckboxes();
-  _updateSaButtons();
-  _updatePruneSummary();
+async function selectAllBest() {
+  try {
+    const data = await _fetchAllPaths();
+    pruneSelected = new Set(data.keep_paths);
+    saState = 'best';
+    _syncCheckboxes();
+    _updateSaButtons();
+    _updatePruneSummary();
+  } catch (err) { alert('Error: ' + err); }
+}
+
+async function selectAllLower() {
+  try {
+    const data = await _fetchAllPaths();
+    pruneSelected = new Set(data.remove_paths);
+    saState = 'lower';
+    _syncCheckboxes();
+    _updateSaButtons();
+    _updatePruneSummary();
+  } catch (err) { alert('Error: ' + err); }
+}
+
+function _renderPrunePagination() {
+  const totalPages = Math.ceil(pruneTotalGroups / prunePageSize);
+  const pg = document.getElementById('prune-pagination');
+  if (totalPages <= 1) { pg.style.display = 'none'; } else { pg.style.display = 'flex'; }
+
+  const start = prunePage * prunePageSize + 1;
+  const end   = Math.min((prunePage + 1) * prunePageSize, pruneTotalGroups);
+  document.getElementById('prune-page-info').textContent =
+    `Groups ${start.toLocaleString()}–${end.toLocaleString()} of ${pruneTotalGroups.toLocaleString()}`;
+  document.getElementById('prune-prev-btn').disabled = prunePage === 0;
+  document.getElementById('prune-next-btn').disabled = prunePage >= totalPages - 1;
+
+  const banner = document.getElementById('prune-summary-banner');
+  if (pruneTotalGroups > 0) {
+    banner.style.display = 'block';
+    banner.textContent =
+      `${pruneTotalGroups.toLocaleString()} duplicate groups — ${pruneTotalRemove.toLocaleString()} lower-quality copies identified`;
+  }
 }
 
 function _syncCheckboxes() {
@@ -3152,8 +4805,15 @@ async function previewFile(path) {
 function pruneStep1() {
   if (pruneSelected.size === 0) return;
   const n = pruneSelected.size;
-  document.getElementById('c1-count').textContent =
-    `${n} file${n > 1 ? 's' : ''}`;
+  const perm = document.getElementById('prune-permanent-cb').checked;
+  document.getElementById('c1-count').textContent = `${n} file${n > 1 ? 's' : ''}`;
+  document.getElementById('c1-mode-note').textContent = perm
+    ? '⚠ Permanent delete mode — files will be unlinked directly. This cannot be undone.'
+    : 'Files will be moved to a recovery folder in Trash. Nothing is permanently deleted.';
+  document.getElementById('c1-mode-note').style.color = perm ? 'var(--danger)' : '';
+  document.getElementById('btn-execute-prune').textContent = perm
+    ? 'Execute — Delete Permanently'
+    : 'Execute — Move to Trash';
   _openConfirm('confirm-step1');
 }
 
@@ -3204,13 +4864,34 @@ async function executePrune() {
   const statusEl = document.getElementById('prune-status-msg');
   if (statusEl) statusEl.style.display = 'none';
 
-  const paths = [...pruneSelected];
-  const url   = '/api/run/prune?paths=' + encodeURIComponent(JSON.stringify(paths));
-  runCommand(url, `Prune — ${paths.length} duplicate${paths.length > 1 ? 's' : ''} moved to Trash`, (exitCode) => {
+  const paths   = [...pruneSelected];
+  const permanent = document.getElementById('prune-permanent-cb').checked;
+
+  // Stage the paths server-side to avoid blowing the 256 KB header limit
+  // when passing thousands of file paths as a query string.
+  let token;
+  try {
+    const res = await fetch('/api/prune/stage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths, permanent }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.token) throw new Error(data.error || 'stage failed');
+    token = data.token;
+  } catch (e) {
+    _showPruneStatus(`✗ Could not stage prune — ${e.message}`, true);
+    return;
+  }
+
+  const verb   = permanent ? 'deleted permanently' : 'moved to Trash';
+  const label  = permanent ? 'deleted' : 'moved to Trash';
+  const url    = `/api/run/prune?token=${encodeURIComponent(token)}`;
+  runCommand(url, `Prune — ${paths.length} duplicate${paths.length > 1 ? 's' : ''} ${verb}`, (exitCode) => {
     if (exitCode === 0) {
       pruneSelected.clear();
       _updatePruneSummary();
-      _showPruneStatus(`✓ Prune complete — ${paths.length} file${paths.length > 1 ? 's' : ''} sent to Trash. Check the report for details.`, false);
+      _showPruneStatus(`✓ Prune complete — ${paths.length} file${paths.length > 1 ? 's' : ''} ${label}. Check the report for details.`, false);
     } else {
       _showPruneStatus('✗ Prune failed — see the log panel (View Output) for details.', true);
     }
@@ -3519,6 +5200,72 @@ const _origOpenLog  = openLog;
 const _origCloseLog = closeLog;
 openLog  = function(t) { _origOpenLog(t);  document.body.classList.add('log-open');    };
 closeLog = function()   { _origCloseLog();  document.body.classList.remove('log-open'); };
+
+/* ── Drag-and-drop path inputs ─────────────────────────────────────────── */
+/* macOS Finder drag exposes file:///path via text/uri-list.                 */
+/* Strips the file://[authority] prefix and URI-decodes the result.          */
+function _extractDropPath(e) {
+  const uriList = e.dataTransfer.getData('text/uri-list');
+  if (uriList) {
+    const first = uriList.trim().split(/\r?\n/).find(l => l.startsWith('file://'));
+    if (first) return decodeURIComponent(first.replace(/^file:\/\/[^/]*/, ''));
+  }
+  const plain = e.dataTransfer.getData('text/plain');
+  if (plain && plain.trim().startsWith('/')) return plain.trim();
+  return null;
+}
+
+function setupDropZone(input) {
+  if (!input || input.dataset.dropReady) return;
+  input.dataset.dropReady = '1';
+
+  // Wrap in .drop-wrap (provides positioning context for the badge)
+  if (!input.parentElement.classList.contains('drop-wrap')) {
+    const wrap = document.createElement('div');
+    wrap.className = 'drop-wrap';
+    // If the input has an inline flex value, transfer it to the wrap
+    if (input.style.flex) wrap.style.flex = input.style.flex;
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const badge = document.createElement('span');
+    badge.className = 'drop-badge';
+    badge.textContent = '⤵ drop';
+    wrap.appendChild(badge);
+  }
+
+  const getWrap = () => input.closest('.drop-wrap');
+  input.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    getWrap()?.classList.add('drop-active');
+  });
+  input.addEventListener('dragleave', () => getWrap()?.classList.remove('drop-active'));
+  input.addEventListener('drop', e => {
+    e.preventDefault();
+    const wrap = getWrap();
+    wrap?.classList.remove('drop-active');
+    const path = _extractDropPath(e);
+    if (path) {
+      input.value = path;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      wrap?.classList.add('drop-filled');
+      wrap?.addEventListener('animationend', () => wrap?.classList.remove('drop-filled'), { once: true });
+    }
+  });
+}
+
+function setupAllDropZones() {
+  [
+    'audit-root', 'process-path', 'dupes-path', 'dupes-output',
+    'prune-csv-path', 'relocate-old', 'relocate-new',
+    'import-path', 'link-path', 'normalize-path', 'convert-path',
+    'organize-target', 'novelty-source', 'novelty-dest',
+    'settings-custom-input'
+  ].forEach(id => { const el = document.getElementById(id); if (el) setupDropZone(el); });
+  document.querySelectorAll('.org-source-input').forEach(setupDropZone);
+}
+
+setupAllDropZones();
 </script>
 </body>
 </html>
