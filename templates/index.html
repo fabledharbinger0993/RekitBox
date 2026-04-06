@@ -1043,25 +1043,49 @@
       </div>
     </div>
 
-    <!-- ── Phase 2: Configure each step ───────────────────────────────────── -->
+    <!-- ── Phase 2: Configure each step (redesigned split-panel) ────────── -->
     <div id="pipe-wiz-p2" class="hidden">
       <div class="pipe-wiz-header">
         <img src="/static/SRB_LOGO.png" alt="" style="width:26px;height:26px;object-fit:contain;opacity:.7;mix-blend-mode:screen;flex-shrink:0">
         <div style="flex:1">
           <div class="pipe-wiz-title">Configure Steps</div>
-          <div class="pipe-wiz-sub">Set paths and options — click a step on the left to jump to it.</div>
+          <div class="pipe-wiz-sub">Select a step from the list to configure it. All required fields must be filled before running.</div>
         </div>
         <button class="welcome-close" onclick="closePipelineWizard()" title="Close">✕</button>
       </div>
 
-      <div class="pipe-wiz-p2-body">
-        <!-- Left: step stack -->
-        <div class="pipe-wiz-stack" id="pipe-wiz-stack"></div>
-        <!-- Right: config forms (scrollable) -->
-        <div class="pipe-wiz-configs" id="pipe-wiz-configs"></div>
+      <!-- Split body: narrow sidebar + large config panel -->
+      <div class="pipe-wiz-p2-body" style="display:flex;flex:1;overflow:hidden;min-height:0;">
+
+        <!-- LEFT: scrollable ordered step sidebar -->
+        <div id="pipe-wiz-stack"
+             style="width:210px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);
+                    padding:10px 0;display:flex;flex-direction:column;gap:4px;">
+          <!-- populated by pipeWizBuildConfigs() -->
+        </div>
+
+        <!-- RIGHT: single active config panel -->
+        <div id="pipe-wiz-active-cfg"
+             style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+          <div style="color:var(--text-dim);font-size:.84rem;margin:auto;text-align:center;">
+            Select a step on the left to configure it.
+          </div>
+        </div>
+
       </div>
 
-      <div class="pipe-wiz-footer">
+      <!-- Completion progress strip -->
+      <div id="wiz-progress-strip"
+           style="padding:6px 20px;border-top:1px solid var(--border);font-size:.75rem;
+                  color:var(--text-dim);display:flex;align-items:center;gap:10px;flex-shrink:0;">
+        <span id="wiz-progress-label">0 / 0 steps ready</span>
+        <div style="flex:1;height:3px;background:var(--surface-hi);border-radius:2px;overflow:hidden;">
+          <div id="wiz-progress-bar"
+               style="height:100%;width:0%;background:var(--accent);border-radius:2px;transition:width .3s;"></div>
+        </div>
+      </div>
+
+      <div class="pipe-wiz-footer" style="position:relative;">
         <button class="btn" onclick="pipeWizBack()">← Back</button>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:500">
           <input type="checkbox" id="wiz-dry-run-2" checked style="width:15px;height:15px;accent-color:var(--accent)">
@@ -1071,7 +1095,22 @@
           <input type="checkbox" id="wiz-confirm-steps-2" style="width:14px;height:14px;accent-color:var(--caution)">
           Confirm between steps
         </label>
-        <button class="btn btn-neon" id="wiz-run-btn" onclick="pipeWizRun()" style="margin-left:auto;gap:8px"><img src="/static/icon-start-wizard.png" style="width:18px;height:18px;object-fit:contain"> Run Pipeline</button>
+        <div style="margin-left:auto;position:relative;">
+          <!-- "Please fill required fields" tooltip -->
+          <div id="wiz-next-tooltip"
+               style="display:none;position:absolute;bottom:calc(100% + 8px);right:0;
+                      white-space:nowrap;background:rgba(239,68,68,.15);
+                      border:1px solid rgba(239,68,68,.5);color:var(--danger);
+                      border-radius:6px;padding:6px 12px;font-size:.78rem;font-weight:600;
+                      pointer-events:none;z-index:10;">
+            Please make required selections
+          </div>
+          <button class="btn btn-neon" id="wiz-run-btn" onclick="pipeWizRun()"
+                  style="gap:8px;transition:box-shadow .3s;">
+            <img src="/static/icon-start-wizard.png" style="width:18px;height:18px;object-fit:contain">
+            Run Pipeline
+          </button>
+        </div>
       </div>
     </div>
 
@@ -2418,113 +2457,233 @@ function pipeWizBack() {
 
 function pipeWizRun() {
   if (pipelineSteps.length === 0) return;
-  // Cache configs on each step object
+
+  // Read draft from currently active panel before validating
+  const active = pipelineSteps[_wizActiveIndex];
+  if (active) _pipeWizReadDraft(active);
+
+  // Validate all steps
+  const incomplete = pipelineSteps.filter(s => !_stepIsReady(s));
+  if (incomplete.length > 0) {
+    // Highlight the first incomplete step in the sidebar
+    const firstIdx = pipelineSteps.indexOf(incomplete[0]);
+    pipeWizSelectStep(firstIdx);
+    // Show tooltip over Run button
+    const tip = document.getElementById('wiz-next-tooltip');
+    tip.style.display = 'block';
+    clearTimeout(tip._hideTimer);
+    tip._hideTimer = setTimeout(() => { tip.style.display = 'none'; }, 5000);
+    const hide = () => { tip.style.display = 'none'; document.removeEventListener('click', hide); };
+    setTimeout(() => document.addEventListener('click', hide), 10);
+    return;
+  }
+
+  // Commit all draft configs
   pipelineSteps.forEach(s => {
-    s._config = _pipelineReadConfig(s);
+    s._config = s._draftConfig || {};
     _savePipeCfg(s.type, s._config);
   });
-  const dryRun     = document.getElementById('wiz-dry-run-2').checked;
+
+  const dryRun      = document.getElementById('wiz-dry-run-2').checked;
   const confirmMode = document.getElementById('wiz-confirm-steps-2').checked;
   closePipelineWizard();
   runPipeline(dryRun, confirmMode);
 }
 
+/* ── Count type occurrences for duplicate-step labeling ─────────────────── */
+function _typeLabel(steps, step, i) {
+  const siblings = steps.filter((s, j) => s.type === step.type && j <= i);
+  const count = siblings.length;
+  const def = PIPE_STEPS[step.type] || { name: step.type };
+  return count > 1 ? `${def.name} (${count})` : def.name;
+}
+
+/* ── Required fields per step type ──────────────────────────────────────── */
+const STEP_REQUIRED_FIELDS = {
+  audit:      [],           // root is optional
+  process:    ['path'],
+  normalize:  ['path'],
+  duplicates: ['path'],
+  prune:      [],           // auto-uses CSV from prior duplicates step
+  convert:    ['path'],
+  relocate:   ['old_root','new_root'],
+  import:     ['path'],
+  link:       ['path'],
+  organize:   ['source','target'],
+  novelty:    ['source','dest'],
+};
+
+function _stepIsReady(step) {
+  const required = STEP_REQUIRED_FIELDS[step.type] || [];
+  if (required.length === 0) return true;
+  const cfg = step._draftConfig || {};
+  return required.every(f => (cfg[f] || '').trim() !== '');
+}
+
+function _wizUpdateProgress() {
+  const total = pipelineSteps.length;
+  const ready = pipelineSteps.filter(_stepIsReady).length;
+  const pct   = total === 0 ? 0 : Math.round((ready / total) * 100);
+
+  document.getElementById('wiz-progress-label').textContent = `${ready} / ${total} steps ready`;
+  document.getElementById('wiz-progress-bar').style.width   = pct + '%';
+
+  const allReady = ready === total && total > 0;
+  const btn = document.getElementById('wiz-run-btn');
+  if (allReady) {
+    btn.style.opacity    = '1';
+    btn.style.boxShadow  = '';
+    btn.style.cursor     = 'pointer';
+  } else {
+    btn.style.opacity    = '0.45';
+    btn.style.boxShadow  = '0 0 12px 2px rgba(239,68,68,.35)';
+    btn.style.cursor     = 'default';
+  }
+
+  // Update sidebar ready indicators
+  pipelineSteps.forEach((s, i) => {
+    const si = document.getElementById(`pipe-wiz-si-${i}`);
+    if (!si) return;
+    const dot = si.querySelector('.wiz-ready-dot');
+    if (!dot) return;
+    const ready = _stepIsReady(s);
+    dot.style.background = ready ? 'var(--safe)' : 'rgba(239,68,68,.6)';
+    dot.title = ready ? 'Ready' : 'Needs configuration';
+  });
+}
+
+let _wizActiveIndex = 0;
+
 function pipeWizBuildConfigs() {
-  const stack   = document.getElementById('pipe-wiz-stack');
-  const configs = document.getElementById('pipe-wiz-configs');
+  const stack = document.getElementById('pipe-wiz-stack');
   stack.innerHTML = '';
-  configs.innerHTML = '';
+
+  // Initialise _draftConfig for each step from saved or empty
+  pipelineSteps.forEach(step => {
+    if (!step._draftConfig) {
+      step._draftConfig = step._config ? { ...step._config } : (_loadPipeCfg(step.type) || {});
+    }
+  });
 
   pipelineSteps.forEach((step, i) => {
     const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/SRB_LOGO.png', desc: '' };
-    const saved = _loadPipeCfg(step.type);
+    const label = _typeLabel(pipelineSteps, step, i);
+    const ready = _stepIsReady(step);
 
-    // Stack item
     const si = document.createElement('div');
     si.className = 'pipe-wiz-stack-item' + (i === 0 ? ' active' : '');
-    si.id = `pipe-wiz-si-${i}`;
-    si.onclick = () => pipeWizSelectStep(i);
+    si.id        = `pipe-wiz-si-${i}`;
+    si.onclick   = () => pipeWizSelectStep(i);
     si.innerHTML = `
-      <div class="pipe-step-num" style="width:20px;height:20px;font-size:.68rem;flex-shrink:0">${i + 1}</div>
-      <img src="${def.icon}" style="width:16px;height:16px;object-fit:contain;flex-shrink:0">
-      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${def.name}</span>`;
+      <div class="pipe-step-num" style="width:18px;height:18px;font-size:.65rem;flex-shrink:0">${i + 1}</div>
+      <img src="${def.icon}" style="width:15px;height:15px;object-fit:contain;flex-shrink:0">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">${label}</span>
+      <span class="wiz-ready-dot" title="${ready ? 'Ready' : 'Needs config'}"
+            style="width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-left:4px;
+                   background:${ready ? 'var(--safe)' : 'rgba(239,68,68,.6)'}"></span>`;
     stack.appendChild(si);
-
-    // Config section
-    const sec = document.createElement('div');
-    sec.className = 'pipe-cfg-section';
-    sec.id = `pipe-cfg-sec-${i}`;
-    sec.innerHTML = `
-      <div class="pipe-cfg-section-header">
-        <div class="pipe-step-num" style="flex-shrink:0">${i + 1}</div>
-        <img src="${def.icon}" style="width:20px;height:20px;object-fit:contain">
-        <strong>${def.name}</strong>
-        <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;margin-left:4px">— ${def.desc}</span>
-      </div>
-      ${_pipeWizConfigHTML(step, saved)}`;
-    configs.appendChild(sec);
   });
+
+  _wizActiveIndex = 0;
+  pipeWizSelectStep(0);
+  _wizUpdateProgress();
 }
 
 function pipeWizSelectStep(i) {
+  _wizActiveIndex = i;
   document.querySelectorAll('.pipe-wiz-stack-item').forEach((el, j) => {
     el.classList.toggle('active', j === i);
   });
-  const sec = document.getElementById(`pipe-cfg-sec-${i}`);
-  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const step  = pipelineSteps[i];
+  if (!step) return;
+  const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/SRB_LOGO.png', desc: '' };
+  const label = _typeLabel(pipelineSteps, step, i);
+  const panel = document.getElementById('pipe-wiz-active-cfg');
+
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <img src="${def.icon}" style="width:24px;height:24px;object-fit:contain">
+      <div>
+        <div style="font-weight:700;font-size:1rem">${label}</div>
+        <div style="font-size:.75rem;color:var(--text-dim)">${def.desc}</div>
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:4px 0 12px">
+    ${_pipeWizConfigHTML(step, step._draftConfig)}`;
+
+  // Wire up all inputs in the panel to update _draftConfig live
+  panel.querySelectorAll('input[type=text], input[type=number], select').forEach(el => {
+    el.addEventListener('input', () => {
+      _pipeWizReadDraft(step);
+      _wizUpdateProgress();
+    });
+  });
+  // Wire drop zones
+  panel.querySelectorAll('input[type=text]').forEach(setupDropZone);
 }
 
 function _pipeWizConfigHTML(step, saved) {
-  const id = step.id;
-  const v  = (field, fallback) => (saved && saved[field] !== undefined) ? saved[field] : (fallback || '');
+  /* Renders config fields for the active step using data-cfg attributes.
+     saved is the _draftConfig object (not localStorage). */
+  const v  = (field, fallback) => (saved && saved[field] !== undefined && saved[field] !== '') ? saved[field] : (fallback || '');
 
-  const pathRow = (field, label, placeholder) => `
+  const pathRow = (field, label, placeholder, required = true) => `
     <div class="pipe-cfg-field">
-      <label class="pipe-cfg-label">${label}</label>
-      <input type="text" class="pipe-cfg-input" id="wcfg-${id}-${field}"
-             value="${v(field)}" placeholder="${placeholder}">
+      <label class="pipe-cfg-label">${label}${required ? ' <span style="color:var(--danger)">*</span>' : ''}</label>
+      <div class="drop-wrap" style="flex:1">
+        <input type="text" class="pipe-cfg-input" data-cfg="${field}"
+               value="${v(field)}" placeholder="${placeholder}" style="width:100%">
+        <span class="drop-badge">⤵ drop</span>
+      </div>
     </div>`;
 
-  const workersRow = () => `
-    <div class="pipe-cfg-field" style="width:100px">
+  const workersRow = (def = 4) => `
+    <div class="pipe-cfg-field" style="max-width:180px">
       <label class="pipe-cfg-label">Workers</label>
-      <input type="number" class="pipe-cfg-input pipe-cfg-num" id="wcfg-${id}-workers"
-             value="${v('workers', 1)}" min="1" max="8">
+      <select class="pipe-cfg-input" data-cfg="workers"
+              style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 10px;font-size:.84rem;">
+        ${[1,2,4,6,8].map(n => `<option value="${n}" ${parseInt(v('workers', def)) === n ? 'selected' : ''}>${n} worker${n>1?'s':''}</option>`).join('')}
+      </select>
     </div>`;
 
   switch (step.type) {
     case 'audit':
-      return pathRow('root', 'Music root (optional)', '/Volumes/DJMT/DJMT PRIMARY');
+      return pathRow('root', 'Music root (optional)', '/Volumes/DJMT/DJMT PRIMARY', false);
 
     case 'process':
-      return pathRow('path', 'Music root', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+      return pathRow('path', 'Music folder', '/Volumes/DJMT/DJMT PRIMARY') + workersRow(4);
 
     case 'normalize':
-      return pathRow('path', 'Music root', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+      return pathRow('path', 'Music folder', '/Volumes/DJMT/DJMT PRIMARY') + workersRow(4);
 
     case 'duplicates':
-      return pathRow('path', 'Scan path', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+      return pathRow('path', 'Scan path', '/Volumes/DJMT/DJMT PRIMARY') + workersRow(4);
 
     case 'prune':
-      return `<p class="pipe-cfg-note">Prune uses the duplicate report from the Find Duplicates step above — no additional configuration needed.</p>`;
+      return `<p class="pipe-cfg-note" style="color:var(--text-muted);font-size:.84rem;">
+        Prune reads the duplicate report produced by the Find Duplicates step above.
+        No additional configuration needed — the report path is passed automatically.
+      </p>`;
 
     case 'convert':
-      return pathRow('path', 'Files path', '/Volumes/DJMT/DJMT PRIMARY') + `
-        <div class="pipe-cfg-field-row">
-          <div class="pipe-cfg-field">
-            <label class="pipe-cfg-label">Output format</label>
-            <select class="pipe-cfg-input" id="wcfg-${id}-format">
+      return pathRow('path', 'Files to convert', '/Volumes/DJMT/DJMT PRIMARY') + `
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div class="pipe-cfg-field" style="flex:1">
+            <label class="pipe-cfg-label">Target format <span style="color:var(--danger)">*</span></label>
+            <select class="pipe-cfg-input" data-cfg="format"
+                    style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 10px;font-size:.84rem;width:100%">
               ${['aiff','mp3','wav','flac'].map(f =>
                 `<option value="${f}" ${v('format','aiff') === f ? 'selected' : ''}>${f.toUpperCase()}</option>`
               ).join('')}
             </select>
           </div>
-          ${workersRow()}
+          ${workersRow(4)}
         </div>`;
 
     case 'relocate':
-      return pathRow('old_root', 'Old path prefix', '/Volumes/OldDrive/Music') +
-             pathRow('new_root', 'New path prefix', '/Volumes/DJMT/DJMT PRIMARY');
+      return pathRow('old_root', 'Old path prefix (where files were)', '/Volumes/OLD_DRIVE/Music') +
+             pathRow('new_root', 'New path prefix (where files are now)', '/Volumes/DJMT/DJMT PRIMARY');
 
     case 'import':
       return pathRow('path', 'Import from', '/Volumes/DJMT/DJMT PRIMARY');
@@ -2534,28 +2693,77 @@ function _pipeWizConfigHTML(step, saved) {
 
     case 'organize':
       return pathRow('source', 'Source path', '/Volumes/DJMT/DJMT PRIMARY') +
-             pathRow('target', 'Target path', '/Volumes/DJMT/DJMT PRIMARY') + `
-        <div class="pipe-cfg-field-row">
-          <div class="pipe-cfg-field">
+             pathRow('target', 'Target (organized root)', '/Volumes/DJMT/DJMT PRIMARY') + `
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div class="pipe-cfg-field" style="flex:1">
             <label class="pipe-cfg-label">Mode</label>
-            <select class="pipe-cfg-input" id="wcfg-${id}-mode">
-              <option value="assimilate" ${v('mode','assimilate') === 'assimilate' ? 'selected' : ''}>Assimilate</option>
-              <option value="integrate"  ${v('mode','assimilate') === 'integrate'  ? 'selected' : ''}>Integrate</option>
+            <select class="pipe-cfg-input" data-cfg="mode"
+                    style="background:var(--surface-hi);border:1px solid var(--border-hi);color:var(--text);border-radius:var(--radius);padding:8px 10px;font-size:.84rem;width:100%">
+              <option value="assimilate" ${v('mode','assimilate')==='assimilate'?'selected':''}>Assimilate — move &amp; clean source</option>
+              <option value="integrate"  ${v('mode','assimilate')==='integrate'?'selected':''}>Integrate — copy only</option>
             </select>
           </div>
-          ${workersRow()}
+          ${workersRow(1)}
         </div>`;
 
     case 'novelty':
-      return pathRow('source', 'Source drive', '/Volumes/Passport') +
-             pathRow('dest',   'Home library', '/Volumes/DJMT/DJMT PRIMARY') + workersRow();
+      return pathRow('source', 'Source drive / folder', '/Volumes/Passport') +
+             pathRow('dest',   'Home library destination', '/Volumes/DJMT/DJMT PRIMARY') +
+             workersRow(4);
 
     default:
       return `<p class="pipe-cfg-note">No configuration needed for this step.</p>`;
   }
 }
 
-function _savePipeCfg(type, cfg) {
+function _pipeWizReadDraft(step) {
+  /* Read current values from the active panel into step._draftConfig */
+  const panel = document.getElementById('pipe-wiz-active-cfg');
+  const get  = field => panel.querySelector(`[data-cfg="${field}"]`)?.value?.trim() || '';
+  const getN = (field, def) => parseInt(panel.querySelector(`[data-cfg="${field}"]`)?.value || def);
+
+  const draft = {};
+  switch (step.type) {
+    case 'audit':
+      draft.root = get('root'); break;
+    case 'import':
+      draft.path = get('path'); break;
+    case 'link':
+      draft.path = get('path'); break;
+    case 'process':
+      draft.path    = get('path');
+      draft.workers = getN('workers', 1);
+      draft.no_normalize = true; break;
+    case 'normalize':
+      draft.path    = get('path');
+      draft.workers = getN('workers', 1); break;
+    case 'duplicates':
+      draft.path    = get('path');
+      draft.workers = getN('workers', 1); break;
+    case 'prune':
+      break; // no required fields
+    case 'convert':
+      draft.path    = get('path');
+      draft.format  = get('format') || 'aiff';
+      draft.workers = getN('workers', 1); break;
+    case 'relocate':
+      draft.old_root = get('old_root');
+      draft.new_root = get('new_root'); break;
+    case 'organize':
+      draft.sources  = [get('source')].filter(Boolean);
+      draft.target   = get('target');
+      draft.mode     = get('mode') || 'assimilate';
+      draft.workers  = getN('workers', 1); break;
+    case 'novelty':
+      draft.source  = get('source');
+      draft.dest    = get('dest');
+      draft.workers = getN('workers', 1); break;
+  }
+  step._draftConfig = draft;
+  step._config      = draft;  // keep _config in sync for the runner
+}
+
+
   try { localStorage.setItem(`sb_pipe_cfg_${type}`, JSON.stringify(cfg)); } catch(_) {}
 }
 
@@ -2641,66 +2849,14 @@ function pipelineRender() {
 }
 
 function _pipelineReadConfig(step, extraCsv) {
-  /* Read from wizard config inputs (wcfg-{stepId}-{field}).
-     step: full pipelineStep object {id, type} or legacy string type. */
-  const id   = (typeof step === 'object') ? step.id : null;
-  const type = (typeof step === 'object') ? step.type : step;
-  const get  = field => (id ? document.getElementById(`wcfg-${id}-${field}`)?.value?.trim() : '') || '';
-  const getN = (field, def) => parseInt((id ? document.getElementById(`wcfg-${id}-${field}`)?.value : '') || def);
-
-  switch (type) {
-    case 'audit':
-      return { root: get('root') };
-    case 'import':
-      return { path: get('path') };
-    case 'link':
-      return { path: get('path') };
-    case 'organize':
-      return {
-        sources:       [get('source')].filter(Boolean),
-        target:        get('target'),
-        mode:          get('mode') || 'assimilate',
-        mix_threshold: get('mix_threshold') || '15',
-        workers:       getN('workers', 1),
-      };
-    case 'process':
-      return {
-        path:         get('path'),
-        workers:      getN('workers', 1),
-        no_normalize: true,
-      };
-    case 'normalize':
-      return {
-        path:    get('path'),
-        workers: getN('workers', 1),
-      };
-    case 'duplicates':
-      return {
-        path:    get('path'),
-        workers: getN('workers', 1),
-      };
-    case 'prune':
-      return extraCsv ? { csv: extraCsv } : {};
-    case 'convert':
-      return {
-        path:    get('path'),
-        format:  get('format') || 'aiff',
-        workers: getN('workers', 1),
-      };
-    case 'relocate':
-      return {
-        old_root: get('old_root'),
-        new_root: get('new_root'),
-      };
-    case 'novelty':
-      return {
-        source:  get('source'),
-        dest:    get('dest'),
-        workers: getN('workers', 1),
-      };
-    default:
-      return {};
+  /* Step configs are now managed via _draftConfig → _config in the wizard.
+     This function is the fallback for the auto-mode runner — it returns
+     whatever is already stored on the step object, with prune CSV injection. */
+  const cfg = step._config || _loadPipeCfg(step.type) || {};
+  if (step.type === 'prune' && extraCsv && !cfg.csv) {
+    return { ...cfg, csv: extraCsv };
   }
+  return cfg;
 }
 
 /* ── Pipeline confirm-gate state ──────────────────────────────────────────── */
