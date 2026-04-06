@@ -2385,9 +2385,12 @@ function openPipelineWizard() {
 }
 
 function closePipelineWizard() {
-  document.getElementById('pipeline-wizard-backdrop').classList.add('hidden');
-  // Resolve any pending gate promise so it doesn't leak across sessions
-  if (_pipeGateResolve) { _pipeGateResolve('stop'); _pipeGateResolve = null; }
+  const _pwBox = document.getElementById('pipeline-wizard');
+  _pwBox.classList.add('sb-modal-exit');
+  _pwBox.addEventListener('animationend', () => {
+    document.getElementById('pipeline-wizard-backdrop').classList.add('hidden');
+    _pwBox.classList.remove('sb-modal-exit');
+  }, { once: true });
 }
 
 function pipeWizNext() {
