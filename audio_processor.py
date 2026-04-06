@@ -6,7 +6,7 @@ Analyses and normalises audio files in-place. No database interaction.
 Operations per file (each independently skippable):
 1. BPM detection via librosa beat tracking, written to TBPM tag
 2. Key detection via librosa chroma + Krumhansl-Schmuckler, written to TKEY (Camelot)
-3. Loudness check via ffmpeg ebur128 filter (EBU R128 measurement)
+3. Loudness check via pyloudnorm (EBU R128 measurement)
 4. Normalisation via ffmpeg volume filter if outside tolerance, in-place replacement
 
 Design rules:
@@ -25,9 +25,7 @@ import json
 import logging
 import os
 import shutil
-import signal
 import subprocess
-import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -482,7 +480,6 @@ def process_directory(
     force: bool = False,
     max_workers: int = 1,
     pause_seconds: float = 0.0,
-    skip_paths: set[str] | None = None,
 ) -> list[ProcessResult]:
     """
     Process all audio files under root. Returns all ProcessResults.
@@ -508,26 +505,11 @@ def process_directory(
     from scanner import scan_directory
 
     tracks = list(scan_directory(root))
-
-    # ── Resume: skip files already recorded in scan_index ────────────────────
-    if skip_paths:
-        before = len(tracks)
-        tracks = [t for t in tracks if str(t.path) not in skip_paths]
-        skipped_count = before - len(tracks)
-        if skipped_count:
-            print(
-                f"SUPERBOX_RESUME: Skipping {skipped_count} already-processed "
-                f"files — {len(tracks)} remaining",
-                flush=True,
-            )
-            log.info("Resume: skipping %d already-processed files, %d remain",
-                     skipped_count, len(tracks))
-
     total = len(tracks)
     results: list[ProcessResult] = []
 
     if total == 0:
-        log.info("No audio files found under %s (or all already processed)", root)
+        log.info("No audio files found under %s", root)
         return results
 
     log.info(
@@ -572,7 +554,7 @@ def process_directory(
                 tags_written += 1
         elif r.ok:
             clean += 1
-n        # Build scan index entry — duration via soundfile header (fast, no decode)
+        # Build scan index entry — duration via soundfile header (fast, no decode)
         try:
             duration_sec = round(sf.info(str(r.path)).duration, 1)
         except Exception:
@@ -602,9 +584,6 @@ n        # Build scan index entry — duration via soundfile header (fast, no de
             "duration_sec": duration_sec,
             "file_size":    file_size,
         })
-        # Flush to disk every 100 files so a kill preserves recent progress.
-        if done % 100 == 0:
-            _write_scan_index_partial()
 
     def _process_one(track, index: int) -> ProcessResult:
         r = process_file(
@@ -620,41 +599,6 @@ n        # Build scan index entry — duration via soundfile header (fast, no de
         return r
 
     scan_index: list[dict] = []   # accumulates entries for scan_index.json
-    index_path = Path.home() / "rekordbox-toolkit" / "scan_index.json"
-
-    def _write_scan_index_partial(final: bool = False) -> None:
-        """Merge scan_index entries into the on-disk JSON and flush."""
-        if not scan_index:
-            return
-        try:
-            index_path.parent.mkdir(parents=True, exist_ok=True)
-            existing: dict[str, dict] = {}
-            if index_path.exists():
-                try:
-                    with open(index_path, encoding="utf-8") as f:
-                        for entry in json.load(f):
-                            existing[entry["path"]] = entry
-                except Exception:
-                    pass  # corrupt / empty — start fresh
-            for entry in scan_index:
-                existing[entry["path"]] = entry
-            with open(index_path, "w", encoding="utf-8") as f:
-                json.dump(list(existing.values()), f, indent=2)
-            if final:
-                log.info("Scan index written: %s (%d entries)", index_path, len(existing))
-        except Exception as exc:
-            log.warning("Could not write scan index: %s", exc)
-
-    # ── SIGTERM handler: write partial index and exit with code 130 ──────────
-    _prev_sigterm = signal.getsignal(signal.SIGTERM)
-
-    def _on_sigterm(signum, frame) -> None:
-        log.info("SIGTERM received — writing partial scan index and stopping.")
-        _write_scan_index_partial(final=False)
-        signal.signal(signal.SIGTERM, _prev_sigterm)  # restore default
-        sys.exit(130)  # conventional "interrupted" exit code
-
-    signal.signal(signal.SIGTERM, _on_sigterm)
 
     if max_workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -683,9 +627,23 @@ n        # Build scan index entry — duration via soundfile header (fast, no de
             if pause_seconds > 0 and i < total - 1:
                 time.sleep(pause_seconds)
 
-    # ── Final scan_index write ────────────────────────────────────────────────
-    signal.signal(signal.SIGTERM, _prev_sigterm)  # restore before final write
-    _write_scan_index_partial(final=True)
+    # Write scan index for duplicate pre-filter
+    if scan_index:
+        index_path = Path.home() / "rekordbox-toolkit" / "scan_index.json"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            existing: dict[str, dict] = {}
+            if index_path.exists():
+                with open(index_path, encoding="utf-8") as f:
+                    for entry in json.load(f):
+                        existing[entry["path"]] = entry
+            for entry in scan_index:
+                existing[entry["path"]] = entry
+            with open(index_path, "w", encoding="utf-8") as f:
+                json.dump(list(existing.values()), f, indent=2)
+            log.info("Scan index written: %s (%d entries)", index_path, len(existing))
+        except Exception as exc:
+            log.warning("Could not write scan index: %s", exc)
 
     return results
 
