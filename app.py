@@ -98,7 +98,7 @@ def _backup_info() -> dict:
     if not backups:
         return {"exists": False, "name": None, "age": None}
     latest = backups[0]
-    age = datetime.now() - datetime.fromtimestamp(latest.stat().st_mtime)
+    age = datetime.datetime.now() - datetime.datetime.fromtimestamp(latest.stat().st_mtime)
     h = int(age.total_seconds() // 3600)
     m = int((age.total_seconds() % 3600) // 60)
     age_str = f"{h}h {m}m ago" if h else f"{m}m ago"
