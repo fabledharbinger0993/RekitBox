@@ -379,9 +379,8 @@ def full_audit(
         if scan_root.exists():
             log.info("Scanning for orphaned files under %s...", scan_root)
             o = find_orphans(db, scan_root)
-            merged_orphans.orphans.extend(o.orphans)
-            merged_orphans.total_files += o.total_files
-            merged_orphans.total_size  += o.total_size
+            merged_orphans.orphaned_paths.extend(o.orphaned_paths)
+            merged_orphans.total_scanned += o.total_scanned
         else:
             log.warning("Music root not found, skipping orphan scan: %s", scan_root)
 
