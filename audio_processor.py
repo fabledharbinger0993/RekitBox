@@ -361,7 +361,10 @@ def _write_tags(path: Path, bpm: float | None, key: str | None) -> None:
     if audio is None:
         raise RuntimeError(f"mutagen could not open {path.name}")
     if audio.tags is None:
-        audio.add_tags()
+        try:
+            audio.add_tags()
+        except Exception as e:
+            raise RuntimeError(f"Cannot create tag block for {path.name}: {e}")
 
     tag_type = type(audio.tags).__name__
     is_vorbis = "VCFLACDict" in tag_type or "VComment" in tag_type
@@ -372,9 +375,13 @@ def _write_tags(path: Path, bpm: float | None, key: str | None) -> None:
         if key is not None:
             audio.tags["initialkey"] = [key]
     else:
+        # delall() before setting ensures a clean overwrite regardless of the
+        # existing frame's encoding or format (handles WAV + force-overwrite).
         if bpm is not None:
+            audio.tags.delall("TBPM")
             audio.tags["TBPM"] = TBPM(encoding=3, text=[str(int(round(bpm)))])
         if key is not None:
+            audio.tags.delall("TKEY")
             audio.tags["TKEY"] = TKEY(encoding=3, text=[key])
 
     audio.save()

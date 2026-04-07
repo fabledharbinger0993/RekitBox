@@ -191,11 +191,17 @@
         <span class="risk-badge safe">Read-Only</span>
       </div>
 
-      <div id="audit-path-stack" class="audit-path-stack"></div>
-
-      <div class="btn-row">
-        <button class="btn btn-ghost" type="button" onclick="addAuditPathRow()">+ Add Folder</button>
+      <div class="folder-zone" id="audit-zone">
+        <div class="folder-zone-hint">
+          <strong>⤵ Drop folders here</strong>
+          or type a path and press Enter
+        </div>
+        <div class="folder-zone-input-row">
+          <input type="text" class="folder-zone-text" id="audit-zone-text" placeholder="/Volumes/DRIVE/Music">
+          <button class="folder-zone-add" type="button" onclick="auditZoneAdd()">+ Add</button>
+        </div>
       </div>
+      <div class="folder-pills" id="audit-pills"></div>
 
       <div class="field">
         <div class="checkbox-row">
@@ -253,8 +259,18 @@
 
     <div class="card-form">
       <div class="field">
-        <label>Music Folder Path</label>
-        <input type="text" id="process-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+        <label>Music Folder(s)</label>
+        <div class="folder-zone" id="process-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folders here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="process-zone-text" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+            <button class="folder-zone-add" type="button" onclick="processZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="process-pills"></div>
       </div>
       <div class="field">
         <label>Options</label>
@@ -314,8 +330,18 @@
 
     <div class="card-form">
       <div class="field">
-        <label>Music Folder Path</label>
-        <input type="text" id="dupes-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+        <label>Music Folder(s) to Scan</label>
+        <div class="folder-zone" id="dupes-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folders here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="dupes-zone-text" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+            <button class="folder-zone-add" type="button" onclick="dupesZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="dupes-pills"></div>
       </div>
       <div class="field">
         <label>Save Report To (optional)</label>
@@ -701,8 +727,18 @@
 
     <div class="card-form">
       <div class="field">
-        <label>Music Folder Path</label>
-        <input type="text" id="normalize-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+        <label>Music Folder(s)</label>
+        <div class="folder-zone" id="normalize-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folders here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="normalize-zone-text" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+            <button class="folder-zone-add" type="button" onclick="normalizeZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="normalize-pills"></div>
       </div>
       <div class="field">
         <label>Parallel Workers <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">— ffmpeg processes to run simultaneously (your Mac has 8 cores)</span></label>
@@ -762,7 +798,17 @@
       <div class="field-row">
         <div class="field">
           <label>Directory to Convert</label>
-          <input type="text" id="convert-path" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+          <div class="folder-zone" id="convert-zone">
+            <div class="folder-zone-hint">
+              <strong>⤵ Drop folder here</strong>
+              or type a path and press Enter
+            </div>
+            <div class="folder-zone-input-row">
+              <input type="text" class="folder-zone-text" id="convert-zone-text" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+              <button class="folder-zone-add" type="button" onclick="convertZoneAdd()">+ Add</button>
+            </div>
+          </div>
+          <div class="folder-pills" id="convert-pills"></div>
         </div>
         <div class="field">
           <label>Target Format</label>
@@ -931,8 +977,18 @@
     </div>
     <div class="card-form">
       <div class="field">
-        <label>Source Drive / Folder</label>
-        <input type="text" id="novelty-source" placeholder="/Volumes/Passport">
+        <label>Source Drive(s) / Folder(s)</label>
+        <div class="folder-zone" id="novelty-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folders here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="novelty-zone-text" placeholder="/Volumes/Passport">
+            <button class="folder-zone-add" type="button" onclick="noveltyZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="novelty-pills"></div>
       </div>
       <div class="field">
         <label>Destination (Home Library)</label>
@@ -2017,19 +2073,13 @@ function lsLoad(id) {
 }
 
 async function prefillDefaults() {
-  // Fields that map to the music root
-  const rootFields = [
-    'process-path','import-path',
-    'link-path','normalize-path','dupes-path','relocate-new','convert-path','organize-target',
-    'novelty-dest',
-  ];
-  // Fields that are optional overrides (audit root) — prefill but don't force
-  const optionalFields = ['audit-root'];
-  // Relocate old root — user-specific, just restore from localStorage
-  const freeFields = ['relocate-old','dupes-output','novelty-source'];
+  // Single-path text inputs that still map to the music root
+  const rootFields = ['import-path', 'link-path', 'relocate-new', 'organize-target', 'novelty-dest'];
+  // Free fields — user-specific, restore from localStorage only
+  const freeFields = ['relocate-old', 'dupes-output'];
 
   // Restore any previously saved value for every tracked field first
-  [...rootFields, ...optionalFields, ...freeFields].forEach(id => {
+  [...rootFields, ...freeFields].forEach(id => {
     const saved = lsLoad(id);
     const el = document.getElementById(id);
     if (el && saved) el.value = saved;
@@ -2039,14 +2089,24 @@ async function prefillDefaults() {
   try {
     const res    = await fetch('/api/config');
     const config = await res.json();
-    rootFields.forEach(id => {
-      const el = document.getElementById(id);
-      if (el && !el.value) el.value = config.music_root;
-    });
+    const root   = config.music_root;
+    if (root) {
+      // Single-path text inputs
+      rootFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.value) el.value = root;
+      });
+      // Pill zones — seed with the music root if they're still empty
+      ['process-pills','dupes-pills','normalize-pills','convert-pills','audit-pills'].forEach(pillsId => {
+        if (document.getElementById(pillsId)?.children.length === 0) {
+          addFolderPill(pillsId, root);
+        }
+      });
+    }
   } catch (_) {}
 
-  // Save to localStorage whenever the user edits any path field
-  [...rootFields, ...optionalFields, ...freeFields].forEach(id => {
+  // Save to localStorage whenever the user edits any remaining path field
+  [...rootFields, ...freeFields].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', () => lsSave(id));
   });
@@ -2342,33 +2402,23 @@ function setAllButtons(disabled) {
 }
 
 /* ── Individual command runners ────────────────────────────────────────────── */
-function runAudit() {
-  const root       = document.getElementById('audit-root').value.trim();
-  const savePhys   = document.getElementById('audit-save-physical') &&
-                     document.getElementById('audit-save-physical').checked ? '1' : '0';
-  const p = new URLSearchParams();
-  if (root) p.set('root', root);
-  p.set('save_physical', savePhys);
-  runCommand(`/api/run/audit?${p.toString()}`, 'Audit — Database + Physical Scan', null, true);
-}
-
-
 function runProcess() {
-  const path = document.getElementById('process-path').value.trim();
-  if (!path) { alert('Enter a music folder path first.'); return; }
-  const p = new URLSearchParams({ path });
+  const paths = getFolderPaths('process-pills');
+  if (!paths.length) { alert('Add at least one music folder first.'); return; }
+  const p = new URLSearchParams();
+  paths.forEach(path => p.append('path', path));
   if (document.getElementById('process-no-bpm').checked)  p.set('no_bpm', '1');
   if (document.getElementById('process-no-key').checked)  p.set('no_key', '1');
   if (document.getElementById('process-force').checked)   p.set('force',  '1');
-  p.set('no_normalize', '1');  
+  p.set('no_normalize', '1');
   const el = document.getElementById('process-result');
   if (el) el.classList.add('hidden');
   runCommand(`/api/run/process?${p}`, 'Tag Tracks — BPM & Key Detection', null, true, false);
 }
 
 function runNormalize() {
-  const path = document.getElementById('normalize-path').value.trim();
-  if (!path) { alert('Enter a music folder path first.'); return; }
+  const paths = getFolderPaths('normalize-pills');
+  if (!paths.length) { alert('Add at least one music folder first.'); return; }
   const confirmed = confirm(
     'This will rewrite audio files.\n\n' +
     'Originals are renamed .bak during the operation and deleted only after the new file is verified.\n\n' +
@@ -2376,9 +2426,9 @@ function runNormalize() {
     'Continue?'
   );
   if (!confirmed) return;
-  // no_bpm + no_key: normalize step is loudness-only; tag detection runs in Step 2
   const workers = document.getElementById('normalize-workers')?.value || '4';
-  const p = new URLSearchParams({ path, no_bpm: '1', no_key: '1' });
+  const p = new URLSearchParams({ no_bpm: '1', no_key: '1' });
+  paths.forEach(path => p.append('path', path));
   if (parseInt(workers) > 1) p.set('workers', workers);
   const el = document.getElementById('normalize-result');
   if (el) el.classList.add('hidden');
@@ -2418,9 +2468,9 @@ function runRelocate() {
 }
 
 function runDuplicates() {
-  const path = document.getElementById('dupes-path').value.trim();
-  if (!path) { alert('Enter a music folder path first.'); return; }
-  const p = new URLSearchParams({ path });
+  const paths = getFolderPaths('dupes-pills');
+  if (!paths.length) { alert('Add at least one music folder first.'); return; }
+  const p = new URLSearchParams({ path: paths[0] });
   const out = document.getElementById('dupes-output').value.trim();
   if (out) p.set('output', out);
   const workers = document.getElementById('dupes-workers')?.value || '4';
@@ -2429,12 +2479,12 @@ function runDuplicates() {
 }
 
 function runConvert() {
-  const path = document.getElementById('convert-path').value.trim();
+  const paths = getFolderPaths('convert-pills');
   const format = document.getElementById('convert-format').value.trim();
-  if (!path) { alert('Enter a music folder path first.'); return; }
+  if (!paths.length) { alert('Add a folder first.'); return; }
   if (!format) { alert('Select a target format.'); return; }
   const workers = document.getElementById('convert-workers')?.value || '4';
-  const p = new URLSearchParams({ path, format });
+  const p = new URLSearchParams({ path: paths[0], format });
   if (parseInt(workers) > 1) p.set('workers', workers);
   runCommand(`/api/run/convert?${p}`, `Converting Audio Files to ${format.toUpperCase()}`);
 }
@@ -3297,13 +3347,13 @@ function runOrganize() {
 
 /* ── Novelty Scanner ───────────────────────────────────────────────────────── */
 function runNovelty() {
-  const source  = document.getElementById('novelty-source').value.trim();
+  const sources = getFolderPaths('novelty-pills');
   const dest    = document.getElementById('novelty-dest').value.trim();
   const dryRun  = document.getElementById('novelty-dry-run').checked;
-  if (!source) { alert('Enter a source drive or folder path.'); return; }
-  if (!dest)   { alert('Enter a destination (home library) path.'); return; }
+  if (!sources.length) { alert('Add at least one source drive or folder.'); return; }
+  if (!dest)           { alert('Enter a destination (home library) path.'); return; }
   const p = new URLSearchParams();
-  p.set('source', source);
+  p.set('source', sources[0]);
   p.set('dest', dest);
   if (!dryRun) p.set('no_dry_run', '1');
   const label = dryRun
@@ -3943,79 +3993,92 @@ function _extractDropPath(e) {
   if (plain && plain.trim().startsWith('/')) return plain.trim();
   return null;
 }
-function auditRowHtml(value = '') {
-  const safeValue = String(value || '').replace(/"/g, '&quot;');
-  return `
-    <div class="audit-path-row">
-      <button type="button" class="audit-dot-btn" onclick="toggleAuditRow(this)" title="Expand/collapse"></button>
-      <input type="text" class="audit-path-input" value="${safeValue}" placeholder="/Volumes/DRIVE/Music">
-      <button type="button" class="audit-dot-btn" onclick="removeAuditRow(this)" title="Remove row"></button>
-    </div>
-  `;
+/* ── Folder pill zone system ────────────────────────────────────────────────
+   Replaces single-path text inputs for all "source folder" type cards.
+   Each zone has a drag target + type-and-enter input. Dropped/entered
+   paths appear as pills with an × to remove them.                         */
+
+function addFolderPill(pillsId, fullPath) {
+  const container = document.getElementById(pillsId);
+  if (!container) return;
+  // Derive display name from last non-empty path segment
+  const name = fullPath.replace(/\/+$/, '').split('/').pop() || fullPath;
+  const pill = document.createElement('span');
+  pill.className = 'folder-pill';
+  pill.title = fullPath;
+  pill.innerHTML =
+    `<span class="folder-pill-name">${name}</span>` +
+    `<button class="folder-pill-x" type="button" title="Remove">✕</button>`;
+  pill.querySelector('.folder-pill-x').addEventListener('click', () => pill.remove());
+  // Store full path as a data attribute
+  pill.dataset.path = fullPath;
+  container.appendChild(pill);
 }
 
-function addAuditPathRow(value = '') {
-  const stack = document.getElementById('audit-path-stack');
-  if (!stack) return;
-  stack.insertAdjacentHTML('beforeend', auditRowHtml(value));
-  const row = stack.lastElementChild;
-  const input = row.querySelector('.audit-path-input');
-  if (input) input.focus();
-}
-
-function toggleAuditRow(btn) {
-  const row = btn.closest('.audit-path-row');
-  if (!row) return;
-  const input = row.querySelector('.audit-path-input');
-  const collapsed = row.classList.toggle('collapsed');
-  btn.classList.toggle('collapsed', collapsed);
-  if (!collapsed && input) input.focus();
-}
-
-function removeAuditRow(btn) {
-  const row = btn.closest('.audit-path-row');
-  const stack = document.getElementById('audit-path-stack');
-  if (!row || !stack) return;
-
-  if (stack.children.length > 1) {
-    row.remove();
-  } else {
-    const input = row.querySelector('.audit-path-input');
-    if (input) input.value = '';
-  }
-}
-
-function getAuditPaths() {
-  return Array.from(document.querySelectorAll('.audit-path-input'))
-    .map(el => el.value.trim())
+function getFolderPaths(pillsId) {
+  const container = document.getElementById(pillsId);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('.folder-pill'))
+    .map(p => p.dataset.path)
     .filter(Boolean);
 }
 
-function runAudit() {
-  const paths = getAuditPaths();
-  const savePhys = document.getElementById('audit-save-physical')?.checked ? '1' : '0';
+function setupFolderZone(zoneId, pillsId, textId) {
+  const zone = document.getElementById(zoneId);
+  const text = document.getElementById(textId);
+  if (!zone || !text) return;
 
+  const tryAdd = (val) => {
+    const p = val.replace(/^file:\/\/[^/]*/, '').trim();
+    if (p) { addFolderPill(pillsId, decodeURIComponent(p)); text.value = ''; }
+  };
+
+  zone.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', e => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const path = _extractDropPath(e);
+    if (path) addFolderPill(pillsId, path);
+  });
+  text.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); tryAdd(text.value); }
+  });
+}
+
+/* Per-zone add-button handlers */
+function auditZoneAdd()     { const t = document.getElementById('audit-zone-text');     if (t?.value.trim()) { addFolderPill('audit-pills',     t.value.trim()); t.value = ''; } }
+function processZoneAdd()   { const t = document.getElementById('process-zone-text');   if (t?.value.trim()) { addFolderPill('process-pills',   t.value.trim()); t.value = ''; } }
+function dupesZoneAdd()     { const t = document.getElementById('dupes-zone-text');     if (t?.value.trim()) { addFolderPill('dupes-pills',     t.value.trim()); t.value = ''; } }
+function normalizeZoneAdd() { const t = document.getElementById('normalize-zone-text'); if (t?.value.trim()) { addFolderPill('normalize-pills', t.value.trim()); t.value = ''; } }
+function convertZoneAdd()   { const t = document.getElementById('convert-zone-text');   if (t?.value.trim()) { addFolderPill('convert-pills',   t.value.trim()); t.value = ''; } }
+function noveltyZoneAdd()   { const t = document.getElementById('novelty-zone-text');   if (t?.value.trim()) { addFolderPill('novelty-pills',   t.value.trim()); t.value = ''; } }
+
+function runAudit() {
+  const paths = getFolderPaths('audit-pills');
+  if (!paths.length) { alert('Add at least one folder path to scan.'); return; }
+  const savePhys = document.getElementById('audit-save-physical')?.checked ? '1' : '0';
   const p = new URLSearchParams();
   p.set('save_physical', savePhys);
+  // 'paths' param — api_audit() uses first as --root, rest as --also-scan
   paths.forEach(path => p.append('paths', path));
-
   runCommand(`/api/run/audit?${p.toString()}`, 'Audit — Database + Physical Scan', null, true);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const stack = document.getElementById('audit-path-stack');
-  if (stack && !stack.children.length) addAuditPathRow();
-});
-  
+/* ── Legacy single-input drop zones (relocate, import, link, settings, etc.) */
 function setupDropZone(input) {
   if (!input || input.dataset.dropReady) return;
   input.dataset.dropReady = '1';
 
-  // Wrap in .drop-wrap (provides positioning context for the badge)
   if (!input.parentElement.classList.contains('drop-wrap')) {
     const wrap = document.createElement('div');
     wrap.className = 'drop-wrap';
-    // If the input has an inline flex value, transfer it to the wrap
     if (input.style.flex) wrap.style.flex = input.style.flex;
     input.parentNode.insertBefore(wrap, input);
     wrap.appendChild(input);
@@ -4047,17 +4110,26 @@ function setupDropZone(input) {
 }
 
 function setupAllDropZones() {
+  // Single-path inputs that keep the legacy drop-wrap style
   [
-    'audit-root', 'process-path', 'dupes-path', 'dupes-output',
-    'prune-csv-path', 'relocate-old', 'relocate-new',
-    'import-path', 'link-path', 'normalize-path', 'convert-path',
-    'organize-target', 'novelty-source', 'novelty-dest',
+    'dupes-output', 'prune-csv-path', 'relocate-old', 'relocate-new',
+    'import-path', 'link-path', 'organize-target', 'novelty-dest',
     'settings-custom-input'
   ].forEach(id => { const el = document.getElementById(id); if (el) setupDropZone(el); });
   document.querySelectorAll('.org-source-input').forEach(setupDropZone);
 }
 
 setupAllDropZones();
+
+/* Wire up all folder-zone drag targets on load */
+document.addEventListener('DOMContentLoaded', () => {
+  setupFolderZone('audit-zone',     'audit-pills',     'audit-zone-text');
+  setupFolderZone('process-zone',   'process-pills',   'process-zone-text');
+  setupFolderZone('dupes-zone',     'dupes-pills',     'dupes-zone-text');
+  setupFolderZone('normalize-zone', 'normalize-pills', 'normalize-zone-text');
+  setupFolderZone('convert-zone',   'convert-pills',   'convert-zone-text');
+  setupFolderZone('novelty-zone',   'novelty-pills',   'novelty-zone-text');
+});
 
 /* ── State tracker — per-library step completion ─────────────────────────
    Calls /api/state on load and after every successful command.
@@ -4095,8 +4167,7 @@ async function _initStateOverlay() {
   } catch (_) {}
 }
 _initStateOverlay();
-['process-path','import-path','link-path','audit-root','normalize-path',
- 'organize-target','novelty-dest'].forEach(id => {
+['import-path','link-path','organize-target','novelty-dest'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', () => { if (el.value.trim()) loadState(el.value.trim()); });
 });

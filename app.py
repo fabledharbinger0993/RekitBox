@@ -332,24 +332,36 @@ def api_config():
 @app.route("/api/run/audit")
 def api_audit():
     cmd = [sys.executable, str(CLI_PATH), "audit"]
-    root = request.args.get("root", "").strip()
-    if root:
-        cmd += ["--root", root]
-    # Support multiple physical library roots via repeated also_scan param
-    for extra in request.args.getlist("also_scan"):
-        extra = extra.strip()
-        if extra:
+    # Accept either 'root'/'also_scan' (legacy) or 'paths' (pill-zone UI sends this).
+    # When 'paths' is used, the first is treated as --root, the rest as --also-scan
+    # so that MUSIC_ROOT is never silently substituted for user-supplied paths.
+    paths = [p.strip() for p in request.args.getlist("paths") if p.strip()]
+    if paths:
+        cmd += ["--root", paths[0]]
+        for extra in paths[1:]:
             cmd += ["--also-scan", extra]
-    return _sse_response(cmd, library_root=_get_library_root(request, "root"), step_name="audit")
+    else:
+        root = request.args.get("root", "").strip()
+        if root:
+            cmd += ["--root", root]
+        for extra in request.args.getlist("also_scan"):
+            extra = extra.strip()
+            if extra:
+                cmd += ["--also-scan", extra]
+    library_root = paths[0] if paths else _get_library_root(request, "root")
+    return _sse_response(cmd, library_root=library_root, step_name="audit")
 
 
 @app.route("/api/run/process")
 def api_process():
-    path = request.args.get("path", "").strip()
-    if not path:
+    # Accept repeated 'path' params (pill-zone UI) or a single 'path'.
+    paths = [p.strip() for p in request.args.getlist("path") if p.strip()]
+    if not paths:
         return jsonify({"error": "path is required"}), 400
 
-    cmd = [sys.executable, str(CLI_PATH), "process", path]
+    cmd = [sys.executable, str(CLI_PATH), "process", paths[0]]
+    for extra in paths[1:]:
+        cmd += ["--also-scan", extra]
     if request.args.get("no_bpm") == "1":
         cmd.append("--no-bpm")
     if request.args.get("no_key") == "1":

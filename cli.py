@@ -340,19 +340,25 @@ def cmd_process(args: argparse.Namespace) -> None:
     """
     from audio_processor import process_directory
 
-    root = Path(args.path)
-    if not root.is_dir():
-        log.error("PATH is not a directory: %s", root)
-        sys.exit(1)
+    # Build the list of roots: primary path + any --also-scan additions.
+    roots: list[Path] = [Path(args.path)]
+    for extra in (getattr(args, "also_scan", None) or []):
+        p = Path(extra)
+        if p not in roots:
+            roots.append(p)
+
+    for root in roots:
+        if not root.is_dir():
+            log.error("PATH is not a directory: %s", root)
+            sys.exit(1)
 
     detect_bpm = not args.no_bpm
     detect_key = not args.no_key
     normalise = not args.no_normalize and not args.dry_run
 
     log.info(
-        "Processing %s — BPM:%s KEY:%s NORMALIZE:%s FORCE:%s DRY_RUN:%s",
-        root,
-        detect_bpm, detect_key, normalise, args.force, args.dry_run,
+        "Processing %d root(s) — BPM:%s KEY:%s NORMALIZE:%s FORCE:%s DRY_RUN:%s",
+        len(roots), detect_bpm, detect_key, normalise, args.force, args.dry_run,
     )
 
     if args.dry_run:
@@ -368,26 +374,31 @@ def cmd_process(args: argparse.Namespace) -> None:
             "Ensure your files are backed up independently before proceeding."
         )
 
-    try:
-        results = process_directory(
-            root,
-            detect_bpm=detect_bpm,
-            detect_key=detect_key,
-            normalise=normalise,
-            force=args.force,
-            max_workers=max(1, args.workers),
-        )
-    except Exception:
-        log.exception("Processing failed")
-        sys.exit(1)
+    all_results = []
+    for root in roots:
+        if len(roots) > 1:
+            log.info("─── Scanning %s ───", root)
+        try:
+            results = process_directory(
+                root,
+                detect_bpm=detect_bpm,
+                detect_key=detect_key,
+                normalise=normalise,
+                force=args.force,
+                max_workers=max(1, args.workers),
+            )
+            all_results.extend(results)
+        except Exception:
+            log.exception("Processing failed for %s", root)
+            sys.exit(1)
 
-    total = len(results)
-    bpm_written = sum(1 for r in results if r.bpm_written)
-    key_written = sum(1 for r in results if r.key_written)
-    normalised = sum(1 for r in results if r.normalised)
-    errored = sum(1 for r in results if not r.ok)
-    skipped_bpm = sum(1 for r in results if r.skipped_bpm)
-    skipped_key = sum(1 for r in results if r.skipped_key)
+    total = len(all_results)
+    bpm_written = sum(1 for r in all_results if r.bpm_written)
+    key_written = sum(1 for r in all_results if r.key_written)
+    normalised = sum(1 for r in all_results if r.normalised)
+    errored = sum(1 for r in all_results if not r.ok)
+    skipped_bpm = sum(1 for r in all_results if r.skipped_bpm)
+    skipped_key = sum(1 for r in all_results if r.skipped_key)
 
     if normalise and not detect_bpm and not detect_key:
         # Normalize-only mode
@@ -833,6 +844,13 @@ Examples:
         type=int,
         default=1,
         help="Parallel ffmpeg workers for loudness measurement/normalisation (default: 1)",
+    )
+    p_process.add_argument(
+        "--also-scan",
+        metavar="PATH",
+        action="append",
+        dest="also_scan",
+        help="Additional directory to process (repeatable)",
     )
     p_process.set_defaults(func=cmd_process)
 
