@@ -108,11 +108,12 @@ def cmd_audit(args: argparse.Namespace) -> None:
     from db_connection import read_db
 
     root = Path(args.root) if args.root else MUSIC_ROOT
+    extra_roots = [Path(r) for r in (args.also_scan or [])]
 
     log.info("Opening database (read-only): %s", DJMT_DB)
     try:
         with read_db(DJMT_DB) as db:
-            report = full_audit(db, root=root)
+            report = full_audit(db, root=root, extra_roots=extra_roots)
         summary_text = report.summary()
         print(summary_text)
         # Write report to REPORTS_DIR/Audit/
@@ -733,7 +734,14 @@ Examples:
     p_audit.add_argument(
         "--root",
         metavar="PATH",
-        help=f"Music root for orphan scan (default: {MUSIC_ROOT})",
+        help=f"Primary music root for orphan scan (default: {MUSIC_ROOT})",
+    )
+    p_audit.add_argument(
+        "--also-scan",
+        metavar="PATH",
+        action="append",
+        dest="also_scan",
+        help="Additional library root to include in the physical scan (repeatable)",
     )
     p_audit.set_defaults(func=cmd_audit)
 

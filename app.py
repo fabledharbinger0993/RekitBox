@@ -23,7 +23,6 @@ import sys
 import threading
 import uuid
 import datetime
-import pathlib
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
@@ -336,6 +335,11 @@ def api_audit():
     root = request.args.get("root", "").strip()
     if root:
         cmd += ["--root", root]
+    # Support multiple physical library roots via repeated also_scan param
+    for extra in request.args.getlist("also_scan"):
+        extra = extra.strip()
+        if extra:
+            cmd += ["--also-scan", extra]
     return _sse_response(cmd, library_root=_get_library_root(request, "root"), step_name="audit")
 
 

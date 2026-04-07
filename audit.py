@@ -344,6 +344,7 @@ def find_dead_roots(db: Rekordbox6Database) -> DeadRootReport:
 def full_audit(
     db: Rekordbox6Database,
     root: Path | None = None,
+    extra_roots: list[Path] | None = None,
 ) -> AuditReport:
     """
     Run all three audit passes and return a combined AuditReport.
@@ -353,10 +354,10 @@ def full_audit(
     db : Rekordbox6Database
         Open database (read_db is sufficient).
     root : Path, optional
-        Music root for orphan detection. Defaults to MUSIC_ROOT from config.
-        Orphan scan is skipped only if the root directory does not exist
-        (e.g. the drive is not mounted). To avoid the scan entirely, pass
-        a non-existent path or call snapshot() and validate_paths() directly.
+        Primary music root for orphan detection. Defaults to MUSIC_ROOT from config.
+    extra_roots : list[Path], optional
+        Additional library roots to include in the orphan scan.
+        All roots are scanned and their results merged.
     """
     log.info("Running library snapshot...")
     snap = snapshot(db)
@@ -364,18 +365,30 @@ def full_audit(
     log.info("Validating file paths...")
     paths = validate_paths(db)
 
-    scan_root = root if root is not None else MUSIC_ROOT
-    if scan_root.exists():
-        log.info("Scanning for orphaned files under %s...", scan_root)
-        orphans = find_orphans(db, scan_root)
-    else:
-        log.warning("Music root not found, skipping orphan scan: %s", scan_root)
-        orphans = OrphanReport()
+    # Build the combined list of all roots to scan
+    all_roots: list[Path] = []
+    primary = root if root is not None else MUSIC_ROOT
+    all_roots.append(primary)
+    for extra in (extra_roots or []):
+        if extra not in all_roots:
+            all_roots.append(extra)
+
+    # Scan each root and merge OrphanReports
+    merged_orphans = OrphanReport()
+    for scan_root in all_roots:
+        if scan_root.exists():
+            log.info("Scanning for orphaned files under %s...", scan_root)
+            o = find_orphans(db, scan_root)
+            merged_orphans.orphans.extend(o.orphans)
+            merged_orphans.total_files += o.total_files
+            merged_orphans.total_size  += o.total_size
+        else:
+            log.warning("Music root not found, skipping orphan scan: %s", scan_root)
 
     log.info("Detecting dead drive roots...")
     dead_roots = find_dead_roots(db)
 
-    return AuditReport(snapshot=snap, paths=paths, orphans=orphans, dead_roots=dead_roots)
+    return AuditReport(snapshot=snap, paths=paths, orphans=merged_orphans, dead_roots=dead_roots)
 
 
 # ─── Smoke test ───────────────────────────────────────────────────────────────
