@@ -3977,38 +3977,65 @@ const _origCloseLog = closeLog;
 openLog  = function(t) { _origOpenLog(t);  document.body.classList.add('log-open');    };
 closeLog = function()   { _origCloseLog();  document.body.classList.remove('log-open'); };
 
-/* ── Drag-and-drop path inputs ─────────────────────────────────────────── */
+/* ── Drag-and-drop path extraction ─────────────────────────────────────── */
 /* macOS Finder drag exposes file:///path via text/uri-list.                 */
 /* Strips the file://[authority] prefix and URI-decodes the result.          */
+/* Falls back to text/plain for terminal-style drags (absolute paths only).  */
 function _extractDropPath(e) {
   const uriList = e.dataTransfer.getData('text/uri-list');
   if (uriList) {
-    const first = uriList.trim().split(/\r?\n/).find(l => l.startsWith('file://'));
-    if (first) return decodeURIComponent(first.replace(/^file:\/\/[^/]*/, ''));
+    const first = uriList.trim().split(/\r?\n/).find(l => /^file:\/\//i.test(l) && !l.startsWith('#'));
+    if (first) return decodeURIComponent(first.replace(/^file:\/\/[^/]*/i, '').replace(/\/$/, ''));
   }
   const plain = e.dataTransfer.getData('text/plain');
-  if (plain && plain.trim().startsWith('/')) return plain.trim();
+  if (plain) {
+    const t = plain.trim();
+    if (t.startsWith('/') || t.startsWith('~')) return t.replace(/\/$/, '');
+  }
   return null;
 }
+
+/* ── Global drag-state class ────────────────────────────────────────────── */
+/* Adds body.has-drag while a drag is in flight so CSS can highlight all     */
+/* available drop zones simultaneously.                                       */
+let _docDragCount = 0;
+document.addEventListener('dragenter', () => {
+  if (++_docDragCount === 1) document.body.classList.add('has-drag');
+});
+document.addEventListener('dragleave', () => {
+  if (--_docDragCount <= 0) { _docDragCount = 0; document.body.classList.remove('has-drag'); }
+});
+document.addEventListener('drop', () => { _docDragCount = 0; document.body.classList.remove('has-drag'); }, true);
+
 /* ── Folder pill zone system ────────────────────────────────────────────────
    Replaces single-path text inputs for all "source folder" type cards.
-   Each zone has a drag target + type-and-enter input. Dropped/entered
-   paths appear as pills with an × to remove them.                         */
+   Each zone uses CAPTURE-phase drag listeners so the inner <input> can never
+   absorb the drop event before the zone sees it. A drag counter correctly
+   tracks enter/leave across child elements without false positives.
+   Dropped or typed paths appear as removable pills; duplicates are rejected.  */
 
 function addFolderPill(pillsId, fullPath) {
   const container = document.getElementById(pillsId);
   if (!container) return;
-  // Derive display name from last non-empty path segment
+  // Deduplicate — flash existing pill amber and bail rather than adding a copy
+  const dupe = Array.from(container.querySelectorAll('.folder-pill'))
+    .find(p => p.dataset.path === fullPath);
+  if (dupe) {
+    dupe.classList.remove('pill-already');
+    void dupe.offsetWidth; // force reflow so re-adding the class restarts animation
+    dupe.classList.add('pill-already');
+    dupe.addEventListener('animationend', () => dupe.classList.remove('pill-already'), { once: true });
+    return;
+  }
   const name = fullPath.replace(/\/+$/, '').split('/').pop() || fullPath;
-  const pill = document.createElement('span');
-  pill.className = 'folder-pill';
-  pill.title = fullPath;
-  pill.innerHTML =
-    `<span class="folder-pill-name">${name}</span>` +
-    `<button class="folder-pill-x" type="button" title="Remove">✕</button>`;
-  pill.querySelector('.folder-pill-x').addEventListener('click', () => pill.remove());
-  // Store full path as a data attribute
+  const pill  = document.createElement('span');
+  pill.className    = 'folder-pill';
+  pill.title        = fullPath;
   pill.dataset.path = fullPath;
+  pill.innerHTML    =
+    `<span class="folder-pill-name">${name}</span>` +
+    `<button class="folder-pill-x" type="button" title="Remove ${name}">✕</button>`;
+  pill.querySelector('.folder-pill-x').addEventListener('click', () => pill.remove());
   container.appendChild(pill);
 }
 
@@ -4016,34 +4043,57 @@ function getFolderPaths(pillsId) {
   const container = document.getElementById(pillsId);
   if (!container) return [];
   return Array.from(container.querySelectorAll('.folder-pill'))
-    .map(p => p.dataset.path)
-    .filter(Boolean);
+    .map(p => p.dataset.path).filter(Boolean);
 }
 
 function setupFolderZone(zoneId, pillsId, textId) {
   const zone = document.getElementById(zoneId);
   const text = document.getElementById(textId);
-  if (!zone || !text) return;
+  if (!zone || !text || zone.dataset.zoneReady) return;
+  zone.dataset.zoneReady = '1';
+
+  let _dc = 0; // drag-enter counter — reliably tracks nested enter/leave pairs
 
   const tryAdd = (val) => {
-    const p = val.replace(/^file:\/\/[^/]*/, '').trim();
-    if (p) { addFolderPill(pillsId, decodeURIComponent(p)); text.value = ''; }
+    const p = decodeURIComponent(val.replace(/^file:\/\/[^/]*/i, '')).trim().replace(/\/$/, '');
+    if (p) { addFolderPill(pillsId, p); text.value = ''; }
   };
+
+  // ── Capture-phase listeners ──────────────────────────────────────────────
+  // Using capture (third arg = true) means the zone intercepts dragover/drop
+  // BEFORE the child <input> element sees them. Without this, WebKit routes
+  // the drop to the text input's native handler and it never reaches us.
+
+  zone.addEventListener('dragenter', e => {
+    e.preventDefault();
+    if (++_dc === 1) zone.classList.add('drag-over');
+  }, true);
+
+  zone.addEventListener('dragleave', () => {
+    if (--_dc <= 0) { _dc = 0; zone.classList.remove('drag-over'); }
+  }, true);
 
   zone.addEventListener('dragover', e => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    zone.classList.add('drag-over');
-  });
-  zone.addEventListener('dragleave', e => {
-    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
-  });
+  }, true);
+
   zone.addEventListener('drop', e => {
     e.preventDefault();
+    e.stopPropagation();
+    _dc = 0;
     zone.classList.remove('drag-over');
     const path = _extractDropPath(e);
-    if (path) addFolderPill(pillsId, path);
-  });
+    if (path) {
+      addFolderPill(pillsId, path);
+      // Brief green glow to confirm the drop was received
+      zone.classList.add('drop-success');
+      zone.addEventListener('animationend', () => zone.classList.remove('drop-success'), { once: true });
+    }
+  }, true);
+
+  // ── Keyboard / button add ────────────────────────────────────────────────
   text.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); tryAdd(text.value); }
   });
@@ -4116,16 +4166,17 @@ function setupAllDropZones() {
   document.querySelectorAll('.org-source-input').forEach(setupDropZone);
 }
 
-setupAllDropZones();
-
-/* Wire up all folder-zone drag targets on load */
+/* Wire all drop zones once the DOM is confirmed ready */
 document.addEventListener('DOMContentLoaded', () => {
+  // Folder-pill zones (multi-path, capture-phase drag)
   setupFolderZone('audit-zone',     'audit-pills',     'audit-zone-text');
   setupFolderZone('process-zone',   'process-pills',   'process-zone-text');
   setupFolderZone('dupes-zone',     'dupes-pills',     'dupes-zone-text');
   setupFolderZone('normalize-zone', 'normalize-pills', 'normalize-zone-text');
   setupFolderZone('convert-zone',   'convert-pills',   'convert-zone-text');
   setupFolderZone('novelty-zone',   'novelty-pills',   'novelty-zone-text');
+  // Legacy single-path inputs (relocate, import, link, settings, etc.)
+  setupAllDropZones();
 });
 
 /* ── State tracker — per-library step completion ─────────────────────────
