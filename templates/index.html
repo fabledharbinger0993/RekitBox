@@ -111,67 +111,103 @@
 
   <p class="section-title">Core Pipeline — each tool feeds the next</p>
 
-    <!-- ── Step 1: Audit ──────────────────────────────────────────────────── -->
-  <div class="card" id="step-audit" style="--card-watermark:url('/static/icon-audit.png')">
-    <div class="card-head">
-      <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Audit"></div>
-      <div class="card-meta">
-        <div class="card-title">Library Audit — Database &amp; Physical Scan</div>
-        <div class="card-blurb">Two simultaneous passes: a <strong>database audit</strong> (track counts, tag coverage, missing paths, dead drives) and a <strong>physical library scan</strong> (every file on disk, size, format breakdown, orphans, trash-adjacent files). Read-only — safe to run with RekordBox open.</div>
+   <!-- ── Step 1: Audit ──────────────────────────────────────────────────── -->
+<div class="card" id="step-audit" style="--card-watermark:url('/static/icon-audit.png')">
+  <div class="card-head">
+    <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Audit"></div>
+    <div class="card-meta">
+      <div class="card-title">Library Audit — Database &amp; Physical Scan</div>
+      <div class="card-blurb">
+        Two coordinated passes: a <strong>Rekordbox library scan</strong> that documents tracks, playlists, and file paths,
+        and a <strong>physical library scan</strong> that walks the folders you enter below in order.
       </div>
-      <span class="risk-badge safe">Read-Only</span>
     </div>
+    <span class="risk-badge safe">Read-Only</span>
+  </div>
 
-    <div class="explainers">
-      <details>
-        <summary>What does Audit actually check?</summary>
-        <div class="explain-body">
-          <p>It opens the database in <strong>read-only mode</strong> and runs three passes:</p>
-          <ul>
-            <li><strong>Snapshot</strong> — how many tracks, playlists, cue points, and how many are missing BPM, key, artist, album, or genre tags.</li>
-            <li><strong>Path check</strong> — every file path stored in the database is verified to still exist on disk. Missing files show up here.</li>
-            <li><strong>Orphan scan</strong> — files on disk that RekordBox doesn't know about yet.</li>
-          </ul>
-          <p>Nothing is written. You get a clean report and a baseline to compare against after you're done.</p>
+  <div class="explainers">
+    <details>
+      <summary>What does Audit actually check?</summary>
+      <div class="explain-body">
+        <p>It opens the database in <strong>read-only mode</strong> and documents library structure without modifying anything.</p>
+        <p>The left side captures Rekordbox-internal data. The right side scans the actual folders you specify on disk.</p>
+      </div>
+    </details>
+    <details>
+      <summary>Can anything go wrong?</summary>
+      <div class="explain-body">
+        <p><strong>No.</strong> Audit only reads. If the database path is wrong, it fails before touching anything.</p>
+      </div>
+    </details>
+  </div>
+
+  <div id="dead-roots-banner" style="display:none; margin: 12px 0; padding: 12px 16px;
+       background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3);
+       border-radius: 8px; font-size: .84rem; color: var(--text);">
+    <strong style="color:var(--danger);">⚠ Disconnected drive detected</strong>
+    <div id="dead-roots-detail" style="margin-top:6px; color:var(--text-muted); line-height:1.6;"></div>
+    <div style="margin-top:8px; font-size:.78rem; color:var(--text-dim);">
+      These dead roots have been pre-filled in <strong>Relocate — Fix Broken Paths</strong> below. Run that step next.
+    </div>
+  </div>
+
+  <div class="audit-grid">
+    <div class="audit-card audit-card-left">
+      <div class="card-head">
+        <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Rekordbox Audit"></div>
+        <div class="card-meta">
+          <div class="card-title">Rekordbox Library Scan</div>
+          <div class="card-blurb">
+            Reads the Rekordbox database and documents tracks, playlists, and stored file paths.
+          </div>
         </div>
-      </details>
-      <details>
-        <summary>Can anything go wrong?</summary>
-        <div class="explain-body">
-          <p><strong>No.</strong> Audit is the one command that cannot hurt you. It only reads. The only thing that can go wrong is if the database path in <code>config.py</code> is wrong — in that case it will error with a clear message before touching anything.</p>
+        <span class="risk-badge safe">Read-Only</span>
+      </div>
+
+      <div class="explainers">
+        <details>
+          <summary>What this scan does</summary>
+          <div class="explain-body">
+            <p>This pass inventories the Rekordbox library database, including playlist structure and track file paths.</p>
+            <p>It does not modify files or write back to Rekordbox.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="audit-card audit-card-right">
+      <div class="card-head">
+        <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Physical Audit"></div>
+        <div class="card-meta">
+          <div class="card-title">Physical Library Scan</div>
+          <div class="card-blurb">
+            Scans every folder path you enter below, in order, and builds a physical inventory of those folders.
+          </div>
         </div>
-      </details>
-    </div>
-
-    <div id="dead-roots-banner" style="display:none; margin: 12px 0; padding: 12px 16px;
-         background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3);
-         border-radius: 8px; font-size: .84rem; color: var(--text);">
-      <strong style="color:var(--danger);">⚠ Disconnected drive detected</strong>
-      <div id="dead-roots-detail" style="margin-top:6px; color:var(--text-muted); line-height:1.6;"></div>
-      <div style="margin-top:8px; font-size:.78rem; color:var(--text-dim);">
-        These dead roots have been pre-filled in <strong>Relocate — Fix Broken Paths</strong> below. Run that step next.
+        <span class="risk-badge safe">Read-Only</span>
       </div>
-    </div>
 
-    <div class="card-form">
-      <div class="field">
-        <label>Music Root (optional — for orphan scan)</label>
-        <input type="text" id="audit-root" placeholder="Leave blank to use default from config.py">
+      <div id="audit-path-stack" class="audit-path-stack"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" type="button" onclick="addAuditPathRow()">+ Add Folder</button>
       </div>
+
       <div class="field">
         <div class="checkbox-row">
           <label class="checkbox-label">
             <input type="checkbox" id="audit-save-physical" checked>
-            Save physical scan report (JSON) — used by Organize, Novelty Scanner &amp; Duplicates
+            Save physical scan report JSON
           </label>
         </div>
       </div>
+
       <div class="btn-row">
-        <button class="btn btn-neon" onclick="runAudit()">Run Library Audit</button>
+        <button class="btn btn-neon" type="button" onclick="runAudit()">Run Library Audit</button>
       </div>
     </div>
   </div>
-
+</div>
 
     <!-- ── Step 2: Process (tags only) ────────────────────────────────────── -->
   <div class="card" id="step-process" style="--card-watermark:url('/static/icon-tag.png')">
