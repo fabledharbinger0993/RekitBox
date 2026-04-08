@@ -4438,18 +4438,32 @@ function relocateOldZoneAdd() { const t = document.getElementById('relocate-old-
 function linkZoneAdd()      { const t = document.getElementById('link-zone-text');      if (t?.value.trim()) { addFolderPill('link-pills',      t.value.trim()); t.value = ''; } }
 function noveltyZoneAdd()   { const t = document.getElementById('novelty-zone-text');   if (t?.value.trim()) { addFolderPill('novelty-pills',   t.value.trim()); t.value = ''; } }
 
-/* Browse buttons — always opens the native folder picker dialog */
-async function pickFolderFor(pillsId) {
+/* Browse buttons — opens the native folder picker dialog.
+   Prefers window.pywebview.api.pick_folder() when running inside the
+   PyInstaller bundle (pywebview exposes the _Api class from main.py).
+   Falls back to /api/pick-folder (osascript choose folder) in dev mode. */
+async function _nativePick() {
+  if (window.pywebview && window.pywebview.api && window.pywebview.api.pick_folder) {
+    try {
+      const path = await window.pywebview.api.pick_folder();
+      return path || null;
+    } catch (e) {
+      console.warn('[_nativePick] pywebview api error, falling back:', e);
+    }
+  }
   const r = await fetch('/api/pick-folder');
   const d = await r.json();
-  if (d.path) addFolderPill(pillsId, d.path);
+  return d.path || null;
+}
+async function pickFolderFor(pillsId) {
+  const path = await _nativePick();
+  if (path) addFolderPill(pillsId, path);
 }
 async function pickPathFor(inputId) {
-  const r = await fetch('/api/pick-folder');
-  const d = await r.json();
-  if (d.path) {
+  const path = await _nativePick();
+  if (path) {
     const el = document.getElementById(inputId);
-    if (el) { el.value = d.path; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    if (el) { el.value = path; el.dispatchEvent(new Event('input', { bubbles: true })); }
   }
 }
 /* Drop fallback — reads Finder's selection (which still holds the dragged item

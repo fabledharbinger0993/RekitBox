@@ -89,7 +89,7 @@ app = BUNDLE(
     info_plist={
         'CFBundleName':             'SuperBox',
         'CFBundleDisplayName':      'SuperBox',
-        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleShortVersionString': '1.0.7',
         'NSPrincipalClass':         'NSApplication',
         'NSHighResolutionCapable':  True,
         # Allow WKWebView to connect to the local Flask server
@@ -97,5 +97,9 @@ app = BUNDLE(
             'NSAllowsLocalNetworking': True,
         },
         'LSMinimumSystemVersion': '12.0',
+        # Required so macOS shows the Automation permission prompt when the
+        # bundled app queries Finder's selection via osascript.  Without this
+        # key macOS silently blocks the osascript call, breaking drag-and-drop.
+        'NSAppleEventsUsageDescription': 'SuperBox uses Finder to read the path of folders you drag and drop into the app.',
     },
 )

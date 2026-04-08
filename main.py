@@ -59,6 +59,26 @@ def _wait_for_server(retries: int = 40, delay: float = 0.15) -> bool:
     return False
 
 
+class _Api:
+    """Exposed to JS as window.pywebview.api — used for the native folder picker.
+
+    pywebview's create_file_dialog() is far more reliable than osascript in
+    the PyInstaller bundle because it goes through WKWebView's native APIs
+    rather than requiring Finder Automation permission.
+    """
+    def __init__(self):
+        self._window = None
+
+    def pick_folder(self):
+        if not self._window:
+            return None
+        result = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+        if result:
+            import os
+            return os.path.normpath(result[0])
+        return None
+
+
 if __name__ == '__main__':
     if not _server_running():
         threading.Thread(target=_start_server, daemon=True).start()
@@ -68,6 +88,8 @@ if __name__ == '__main__':
 
     import webview
 
+    _api = _Api()
+
     window = webview.create_window(
         title='SuperBox',
         url=_URL,
@@ -76,6 +98,9 @@ if __name__ == '__main__':
         min_size=(900, 600),
         resizable=True,
         background_color='#07070f',
+        js_api=_api,
     )
+
+    _api._window = window
 
     webview.start(debug=False)
