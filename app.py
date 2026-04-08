@@ -1081,15 +1081,17 @@ end tell"""
             ["osascript", "-e", _finder_script],
             capture_output=True, text=True, timeout=60,
         )
+        print(f"[finder-selection] rc={r.returncode} stdout={repr(r.stdout)} stderr={repr(r.stderr)}", flush=True)
         if r.returncode == 0 and r.stdout.strip():
             return jsonify({"path": r.stdout.strip().rstrip("/")})
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[finder-selection] exception: {exc}", flush=True)
 
     # When called from a drag-drop event, pywebview may focus before osascript
     # runs and Finder clears its selection — return null silently rather than
     # opening a picker dialog the user didn't ask for.
     if source == "drop":
+        print(f"[finder-selection] source=drop, returning null", flush=True)
         return jsonify({"path": None})
 
     # Nothing selected in Finder — open the native picker as fallback
