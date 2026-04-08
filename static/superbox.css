@@ -2123,6 +2123,24 @@ body.log-open #pipeline-btn { bottom: calc(var(--log-h) + var(--scan-bar-h) + 28
 }
 .folder-pill-x:hover { background: rgba(239,68,68,.40); color: #ff6b6b; }
 
+/* ── Library-root indicator pill ────────────────────────────────────────── */
+/* Non-removable, dimmed pill that marks the configured library root.        */
+/* Inherits .folder-pill layout but uses a distinct indigo/muted palette.   */
+.library-pill {
+  background: rgba(99, 102, 241, 0.07);
+  border-color: rgba(99, 102, 241, 0.22);
+  color: rgba(165, 170, 240, 0.70);
+  opacity: 0.80;
+  font-style: italic;
+  cursor: default;
+  animation: none; /* suppress the appear animation — it's always there */
+}
+.library-pill:hover {
+  background: rgba(99, 102, 241, 0.11);
+  border-color: rgba(99, 102, 241, 0.32);
+  opacity: 0.90;
+}
+
 /* ── Folder zone — interactive states ──────────────────────────────────── */
 
 /* Successful drop: brief green glow pulse */

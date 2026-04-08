@@ -612,14 +612,55 @@ def api_relocate():
     if err:
         return err
 
-    old = request.args.get("old_root", "").strip()
-    new = request.args.get("new_root", "").strip()
-    if not old or not new:
+    old_roots   = [r.strip() for r in request.args.getlist("old_root") if r.strip()]
+    new         = request.args.get("new_root", "").strip()
+    if not old_roots or not new:
         return jsonify({"error": "old_root and new_root are required"}), 400
 
-    cmd = [sys.executable, str(CLI_PATH), "relocate", old, new]
     library_root = _get_library_root(request, "new_root")
-    return _sse_response(cmd, library_root=library_root, step_name="relocate")
+
+    if len(old_roots) == 1:
+        cmd = [sys.executable, str(CLI_PATH), "relocate", old_roots[0], new]
+        return _sse_response(cmd, library_root=library_root, step_name="relocate")
+
+    # Multiple old roots — chain each CLI run, only emit done after the last one
+    def _multi():
+        overall = 0
+        for i, old in enumerate(old_roots):
+            if i > 0:
+                yield f"data: {json.dumps({'line': ''})}\n\n"
+                yield f"data: {json.dumps({'line': f'── {i+1}/{len(old_roots)}: relocating {old}'})}\n\n"
+            cmd = [sys.executable, str(CLI_PATH), "relocate", old, new]
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1, cwd=str(REPO_ROOT), env=_subprocess_env(),
+                )
+                with _proc_lock:
+                    globals()['_active_proc'] = proc
+                try:
+                    for line in iter(proc.stdout.readline, ""):
+                        yield f"data: {json.dumps({'line': line.rstrip()})}\n\n"
+                    proc.wait()
+                    if proc.returncode != 0:
+                        overall = proc.returncode
+                finally:
+                    with _proc_lock:
+                        globals()['_active_proc'] = None
+            except Exception as exc:
+                with _proc_lock:
+                    globals()['_active_proc'] = None
+                yield f"data: {json.dumps({'line': f'[SERVER ERROR] {exc}'})}\n\n"
+                overall = 1
+        if library_root:
+            mark_step_complete(library_root, "relocate", overall)
+        yield f"data: {json.dumps({'done': True, 'exit_code': overall})}\n\n"
+
+    return Response(
+        _multi(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/api/run/novelty")
@@ -1129,6 +1170,23 @@ def api_pick_folder():
 
 
 # ── Quit ──────────────────────────────────────────────────────────────────────
+
+@app.route("/api/config/set-music-root", methods=["POST"])
+def api_set_music_root():
+    """Update music_root in ~/.rekordbox-toolkit/config.json and return the new value."""
+    try:
+        from user_config import load_user_config, save_user_config  # noqa: PLC0415
+        data = request.get_json(silent=True) or {}
+        path = str(data.get("path", "")).strip()
+        if not path:
+            return jsonify({"error": "path is required"}), 400
+        cfg = load_user_config()
+        cfg["music_root"] = path
+        save_user_config(cfg)
+        return jsonify({"ok": True, "music_root": path})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 
 @app.route("/api/quit", methods=["POST"])
 def api_quit():

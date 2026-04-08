@@ -565,23 +565,25 @@
     <div class="card-form">
       <div class="card-grid">
 
-        <!-- Left pane: Old path -->
+        <!-- Left pane: Old paths (multi-pill) -->
         <div class="audit-card">
           <div class="audit-panel-title">
             <img src="/static/icon-move.png" alt="" class="audit-panel-icon">
-            Old Path — where files used to be
+            Old Paths — where files used to be
           </div>
-          <p class="audit-panel-blurb">The path prefix currently stored in the Rekordbox database. Does not need to exist on disk — it's matched as text.</p>
+          <p class="audit-panel-blurb">Path prefixes stored in Rekordbox that no longer exist on disk. Add one or more — each is relocated to the new root on the right.</p>
           <div class="folder-zone" id="relocate-old-zone">
             <div class="folder-zone-hint">
               <strong>⤵ Drop old folder here</strong>
-              or type the old path prefix
+              or type the path prefix and press Enter
             </div>
             <div class="folder-zone-input-row">
-              <input type="text" class="folder-zone-text" id="relocate-old" placeholder="/Volumes/OLD_DRIVE/Music">
-              <button class="folder-zone-browse" type="button" onclick="pickPathFor('relocate-old')">Browse…</button>
+              <input type="text" class="folder-zone-text" id="relocate-old-zone-text" placeholder="/Volumes/OLD_DRIVE/Music">
+              <button class="folder-zone-browse" type="button" onclick="pickFolderFor('relocate-old-pills')">Browse…</button>
+              <button class="folder-zone-add" type="button" onclick="relocateOldZoneAdd()">+ Add</button>
             </div>
           </div>
+          <div class="folder-pills" id="relocate-old-pills"></div>
         </div>
 
         <!-- Right pane: New path -->
@@ -2326,12 +2328,11 @@ async function prefillDefaults() {
         const el = document.getElementById(id);
         if (el && !el.value) el.value = root;
       });
-      // Pill zones — seed with the music root if they're still empty
+      // Library-root indicator pill — always present, non-removable, dimmed
+      _libraryRoot = root;
       ['process-pills','dupes-pills','normalize-pills','convert-pills','audit-pills',
        'import-pills','link-pills','organize-source-pills'].forEach(pillsId => {
-        if (document.getElementById(pillsId)?.children.length === 0) {
-          addFolderPill(pillsId, root);
-        }
+        addLibraryPill(pillsId, root);
       });
     }
   } catch (_) {}
@@ -2367,12 +2368,13 @@ function showDeadRootsBanner(deadRoots) {
 }
 
 function prefillRelocate(deadRoots) {
-  // Pre-fill the old path field with the first (largest) dead root
+  // Add each dead root as a pill in the relocate-old-pills zone
   const sorted = Object.entries(deadRoots).sort((a,b) => b[1]-a[1]);
   if (!sorted.length) return;
-  const [oldRoot] = sorted[0];
-  const oldInput = document.getElementById('relocate-old');
-  if (oldInput && !oldInput.value) oldInput.value = oldRoot;
+  const existing = getFolderPaths('relocate-old-pills');
+  sorted.forEach(([oldRoot]) => {
+    if (!existing.includes(oldRoot)) addFolderPill('relocate-old-pills', oldRoot);
+  });
 }
 
 checkDeadRoots();
@@ -2694,10 +2696,12 @@ function runLink() {
 
 function runRelocate() {
   if (checkRbBlock('relocate-rb-block')) return;
-  const old_ = document.getElementById('relocate-old').value.trim();
+  const oldPaths = getFolderPaths('relocate-old-pills');
   const new_ = document.getElementById('relocate-new').value.trim();
-  if (!old_ || !new_) { alert('Both old and new paths are required.'); return; }
-  const p = new URLSearchParams({ old_root: old_, new_root: new_ });
+  if (!oldPaths.length) { alert('Add at least one old path prefix.'); return; }
+  if (!new_) { alert('Enter the new (destination) path.'); return; }
+  const p = new URLSearchParams({ new_root: new_ });
+  oldPaths.forEach(old => p.append('old_root', old));
   runCommand(`/api/run/relocate?${p}`, 'Relocate — Updating File Paths in Database', null, true);
 }
 
@@ -3563,7 +3567,11 @@ function runOrganize() {
   if (threshold !== '15') p.set('mix_threshold', threshold);
   const modeLabel = mode === 'integrate' ? 'Integration (copies only, source untouched)' : 'Assimilation (move + clean source)';
   const label = dryRun ? `Organize — Dry Run · ${modeLabel}` : `Organize — ${modeLabel}`;
-  runCommand(`/api/run/organize?${p}`, label);
+  const _orgTarget = target;
+  const _orgDry    = dryRun;
+  runCommand(`/api/run/organize?${p}`, label, (exitCode) => {
+    if (exitCode === 0 && !_orgDry) _promptSetLibraryRoot(_orgTarget);
+  });
 }
 
 /* ── Novelty Scanner ───────────────────────────────────────────────────────── */
@@ -4395,6 +4403,7 @@ function normalizeZoneAdd() { const t = document.getElementById('normalize-zone-
 function convertZoneAdd()   { const t = document.getElementById('convert-zone-text');   if (t?.value.trim()) { addFolderPill('convert-pills',   t.value.trim()); t.value = ''; } }
 function importZoneAdd()    { const t = document.getElementById('import-zone-text');    if (t?.value.trim()) { addFolderPill('import-pills',    t.value.trim()); t.value = ''; } }
 function organizeZoneAdd()  { const t = document.getElementById('organize-zone-text');  if (t?.value.trim()) { addFolderPill('organize-source-pills', t.value.trim()); t.value = ''; } }
+function relocateOldZoneAdd() { const t = document.getElementById('relocate-old-zone-text'); if (t?.value.trim()) { addFolderPill('relocate-old-pills', t.value.trim()); t.value = ''; } }
 function linkZoneAdd()      { const t = document.getElementById('link-zone-text');      if (t?.value.trim()) { addFolderPill('link-pills',      t.value.trim()); t.value = ''; } }
 function noveltyZoneAdd()   { const t = document.getElementById('novelty-zone-text');   if (t?.value.trim()) { addFolderPill('novelty-pills',   t.value.trim()); t.value = ''; } }
 
@@ -4417,6 +4426,93 @@ async function pickPathFor(inputId) {
    source=drop tells the server not to open a picker dialog if Finder returns
    nothing — on some drops pywebview focuses before osascript runs and Finder's
    selection is momentarily empty. Silently returns null rather than prompting. */
+/* ── Library root indicator pill ────────────────────────────────────────────
+   A dimmed, non-removable pill that marks the configured library root.
+   Appears at the front of every pill zone that defaults to the music root.
+   getFolderPaths() includes it naturally (it carries data-path).            */
+
+let _libraryRoot = '';   // set by prefillDefaults once /api/config loads
+
+function addLibraryPill(pillsId, path) {
+  if (!path) return;
+  const container = document.getElementById(pillsId);
+  if (!container) return;
+  // Update existing pill rather than duplicating
+  const existing = container.querySelector('.library-pill');
+  if (existing) {
+    existing.dataset.path = path;
+    const name = path.replace(/\/+$/, '').split('/').pop() || path;
+    const nameEl = existing.querySelector('.folder-pill-name');
+    if (nameEl) nameEl.textContent = `📍 ${name}`;
+    existing.title = `Library root: ${path}`;
+    return;
+  }
+  const name = path.replace(/\/+$/, '').split('/').pop() || path;
+  const pill = document.createElement('span');
+  pill.className = 'folder-pill library-pill';
+  pill.title = `Library root: ${path}`;
+  pill.dataset.path = path;
+  pill.innerHTML = `<span class="folder-pill-name">📍 ${name}</span>`;
+  container.insertBefore(pill, container.firstChild);
+}
+
+function _refreshLibraryPills(newRoot) {
+  ['process-pills','dupes-pills','normalize-pills','convert-pills',
+   'import-pills','link-pills','organize-source-pills'].forEach(id => addLibraryPill(id, newRoot));
+}
+
+async function setMusicRoot(newPath) {
+  document.getElementById('sb-set-root-banner')?.remove();
+  try {
+    const r = await fetch('/api/config/set-music-root', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: newPath }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      _libraryRoot = newPath;
+      _refreshLibraryPills(newPath);
+      showToast(`Library root → ${newPath.split('/').pop() || newPath}`, 'success');
+    } else {
+      showToast(`Could not update root: ${d.error || 'unknown error'}`, 'error');
+    }
+  } catch (e) {
+    showToast('Failed to update library root', 'error');
+  }
+}
+
+function _promptSetLibraryRoot(newPath) {
+  if (!newPath || newPath === _libraryRoot) return;
+  const name = newPath.replace(/\/+$/, '').split('/').pop() || newPath;
+  let banner = document.getElementById('sb-set-root-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'sb-set-root-banner';
+    document.body.appendChild(banner);
+  }
+  Object.assign(banner.style, {
+    position:'fixed', bottom:'calc(var(--log-h) + var(--scan-bar-h) + 14px)',
+    left:'50%', transform:'translateX(-50%)', zIndex:'1200',
+    padding:'11px 16px', borderRadius:'10px',
+    background:'rgba(14,14,26,.97)',
+    border:'1px solid rgba(129,140,248,.35)',
+    boxShadow:'0 8px 32px rgba(0,0,0,.6)',
+    display:'flex', alignItems:'center', gap:'12px',
+    fontSize:'.84rem', color:'var(--text)',
+    maxWidth:'min(660px,92vw)',
+  });
+  // sanitise path for inline onclick
+  const safe = newPath.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  banner.innerHTML = `
+    <span style="flex:1">📍 Organize moved files to <strong>${name}</strong>. Update the library root?</span>
+    <button class="btn btn-neon" style="padding:5px 14px;font-size:.8rem;white-space:nowrap"
+            onclick="setMusicRoot('${safe}')">Set Root</button>
+    <button class="btn btn-ghost" style="padding:5px 10px;font-size:.8rem"
+            onclick="document.getElementById('sb-set-root-banner')?.remove()">Dismiss</button>
+  `;
+}
+
 async function dropFolderFor(pillsId) {
   // Brief pause: give macOS time to deliver the drop before querying Finder.
   await new Promise(res => setTimeout(res, 120));
@@ -4543,7 +4639,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFolderZone('link-zone',      'link-pills',      'link-zone-text');
   setupFolderZone('organize-zone',  'organize-source-pills', 'organize-zone-text');
   // Single-path zones (visual feedback + Browse/drop, no pills)
-  setupSinglePathZone('relocate-old-zone',    'relocate-old');
+  setupFolderZone('relocate-old-zone', 'relocate-old-pills', 'relocate-old-zone-text');
   setupSinglePathZone('relocate-new-zone',    'relocate-new');
   setupSinglePathZone('prune-csv-zone',       'prune-csv-path');
   setupSinglePathZone('organize-target-zone', 'organize-target');
