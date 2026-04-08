@@ -122,6 +122,9 @@ def ensure_archive_structure() -> None:
 TARGET_LUFS:    float = float(_cfg["target_lufs"])
 LUFS_TOLERANCE: float = float(_cfg["lufs_tolerance"])
 
+# AcoustID API key for MusicBrainz enrichment (optional — empty string disables lookup)
+ACOUSTID_API_KEY: str = _cfg.get("acoustid_api_key", "")
+
 # Supported audio file extensions (lowercase)
 AUDIO_EXTENSIONS = {".mp3", ".aiff", ".aif", ".wav", ".flac", ".m4a", ".ogg", ".opus"}
 

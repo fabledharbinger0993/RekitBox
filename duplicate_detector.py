@@ -59,7 +59,7 @@ from pathlib import Path
 import acoustid
 from mutagen import File as MutagenFile
 
-from config import AUDIO_EXTENSIONS, MUSIC_ROOT, SKIP_DIRS, SKIP_PREFIXES
+from config import ACOUSTID_API_KEY, AUDIO_EXTENSIONS, MUSIC_ROOT, SKIP_DIRS, SKIP_PREFIXES
 
 log = logging.getLogger(__name__)
 
@@ -331,6 +331,10 @@ class DuplicateGroup:
     recommended_remove: list[Path]
     ranks: dict[str, str] = field(default_factory=dict)   # path str → rank label
     keep_in_trash: bool = False  # True when the recommended_keep lives in a trash folder
+    # AcoustID / MusicBrainz enrichment (populated only when an API key is configured)
+    recording_id: str | None = None
+    mb_title:     str | None = None
+    mb_artist:    str | None = None
 
 
 @dataclass
@@ -362,21 +366,65 @@ def fingerprint_file(path: Path) -> str | None:
 
     fpcalc default: analyses first 120 seconds of audio — sufficient for DJ use.
     """
+    result = _fingerprint_with_duration(path)
+    return result[1] if result is not None else None
+
+
+def _fingerprint_with_duration(path: Path) -> tuple[float, str] | None:
+    """
+    Same as fingerprint_file() but also returns the track duration in seconds.
+    Used internally by scan_duplicates() so the AcoustID lookup can reuse the
+    duration without re-running fpcalc.
+    """
     try:
         duration, fingerprint = acoustid.fingerprint_file(str(path))
         if not fingerprint:
             log.warning("Empty fingerprint for %s", path.name)
             return None
-        # Normalise to str — some pyacoustid versions return bytes
         if isinstance(fingerprint, bytes):
             fingerprint = fingerprint.decode("utf-8", errors="replace")
-        return fingerprint
+        return float(duration), fingerprint
     except acoustid.FingerprintGenerationError as e:
         log.error("Fingerprint failed for %s: %s", path.name, e)
         return None
     except Exception as e:
         log.error("Unexpected error fingerprinting %s: %s", path.name, e)
         return None
+
+
+def _acoustid_lookup(
+    api_key: str,
+    fingerprint: str,
+    duration: float,
+) -> tuple[str | None, str | None, str | None]:
+    """
+    Submit a pre-computed fingerprint to the AcoustID web service.
+    Returns (recording_id, title, artist) for the best match, or
+    (None, None, None) on failure or no match.
+
+    Uses acoustid.lookup() so fpcalc is NOT re-run — the fingerprint and
+    duration captured during the local scan pass are reused.
+    """
+    try:
+        response = acoustid.lookup(
+            api_key,
+            fingerprint,
+            duration,
+            meta=["recordings"],
+        )
+        best_score = 0.0
+        best = (None, None, None)
+        for score, rid, title, artist in acoustid.parse_lookup_result(response):
+            if score > best_score:
+                best_score = score
+                best = (rid, title, artist)
+        return best
+    except acoustid.WebServiceError as e:
+        log.warning("AcoustID lookup failed: %s", e)
+        return None, None, None
+    except Exception as e:
+        log.warning("AcoustID lookup error: %s", e)
+        return None, None, None
 
 
 # ─── Filesystem walk ──────────────────────────────────────────────────────────
@@ -462,11 +510,15 @@ def scan_duplicates(
     )
 
     fp_map: dict[str, list[Path]] = {}
+    dur_map: dict[str, float] = {}  # fingerprint → duration of first file seen
     failed = 0
     completed = 0
 
-    def _fingerprint_one(path: Path) -> tuple[Path, str | None]:
-        return path, fingerprint_file(path)
+    def _fingerprint_one(path: Path) -> tuple[Path, float | None, str | None]:
+        result = _fingerprint_with_duration(path)
+        if result is None:
+            return path, None, None
+        return path, result[0], result[1]
 
     if max_workers > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -474,7 +526,7 @@ def scan_duplicates(
             for future in concurrent.futures.as_completed(futures):
                 completed += 1
                 try:
-                    path, fp = future.result()
+                    path, dur, fp = future.result()
                 except Exception as exc:
                     log.error("Unexpected fingerprint error: %s", exc)
                     failed += 1
@@ -483,6 +535,7 @@ def scan_duplicates(
                     failed += 1
                 else:
                     fp_map.setdefault(fp, []).append(path)
+                    dur_map.setdefault(fp, dur)
                 if completed % _LOG_EVERY == 0:
                     log.info(
                         "Fingerprinting: %d / %d  (failures: %d)",
@@ -495,11 +548,13 @@ def scan_duplicates(
                     "Fingerprinting: %d / %d  (failures so far: %d)",
                     i, total, failed,
                 )
-            fp = fingerprint_file(path)
-            if fp is None:
+            result = _fingerprint_with_duration(path)
+            if result is None:
                 failed += 1
             else:
+                dur, fp = result
                 fp_map.setdefault(fp, []).append(path)
+                dur_map.setdefault(fp, dur)
             if pause_seconds > 0 and i < total - 1:
                 time.sleep(pause_seconds)
 
@@ -533,6 +588,28 @@ def scan_duplicates(
         ))
 
     groups.sort(key=lambda g: len(g.files), reverse=True)
+
+    # ── AcoustID enrichment ───────────────────────────────────────────────────
+    # If an API key is configured, submit each group's fingerprint to the
+    # AcoustID web service to get the canonical MusicBrainz recording ID,
+    # title, and artist. Rate-limited to ≤3 req/s per AcoustID ToS.
+    if ACOUSTID_API_KEY and groups:
+        log.info(
+            "AcoustID enrichment: looking up %d groups (≤3 req/s)…", len(groups)
+        )
+        _ACOUSTID_DELAY = 0.34  # seconds between requests (just under 3/s limit)
+        for i, group in enumerate(groups):
+            dur = dur_map.get(group.fingerprint)
+            if dur is not None:
+                rid, title, artist = _acoustid_lookup(
+                    ACOUSTID_API_KEY, group.fingerprint, dur
+                )
+                group.recording_id = rid
+                group.mb_title     = title
+                group.mb_artist    = artist
+            if i < len(groups) - 1:
+                time.sleep(_ACOUSTID_DELAY)
+        log.info("AcoustID enrichment complete.")
 
     trapped_keep_count = sum(1 for g in groups if g.keep_in_trash)
 
@@ -600,6 +677,7 @@ def write_csv_report(
         writer = csv.DictWriter(f, fieldnames=[
             "group_id", "action", "rank", "file_path",
             "file_size_mb", "bpm", "key", "filename", "keep_in_trash",
+            "mb_recording_id", "mb_title", "mb_artist",
         ])
         writer.writeheader()
 
@@ -637,6 +715,9 @@ def write_csv_report(
                     "key": key_str,
                     "filename": path.name,
                     "keep_in_trash": "YES" if group.keep_in_trash else "",
+                    "mb_recording_id": group.recording_id or "",
+                    "mb_title":        group.mb_title or "",
+                    "mb_artist":       group.mb_artist or "",
                 })
                 rows_written += 1
 

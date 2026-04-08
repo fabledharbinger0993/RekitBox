@@ -59,6 +59,7 @@ DEFAULTS: dict = {
     "archive_mode":        "auto",
     "custom_archive_dir":  "",
     "excluded_dirs":       [],   # extra folder names to skip when scanning music root
+    "acoustid_api_key":    "",   # AcoustID API key for fingerprint lookup
 }
 
 # Smart defaults for the setup wizard (platform-aware where relevant)

@@ -4135,25 +4135,41 @@ function setupDropZone(input) {
     wrap.appendChild(badge);
   }
 
-  const getWrap = () => input.closest('.drop-wrap');
-  input.addEventListener('dragover', e => {
+  // Attach listeners to the wrap (not the input) using capture phase so we
+  // intercept events before WebKit routes them to the input's native handler.
+  // This also means dropping on the ⤵ badge works correctly — the wrap sees
+  // the event regardless of which child element the pointer is over.
+  const wrap = input.closest('.drop-wrap');
+  let _dc = 0; // drag counter — tracks nested enter/leave correctly
+
+  wrap.addEventListener('dragenter', e => {
     e.preventDefault();
+    if (++_dc === 1) wrap.classList.add('drop-active');
+  }, true);
+
+  wrap.addEventListener('dragleave', () => {
+    if (--_dc <= 0) { _dc = 0; wrap.classList.remove('drop-active'); }
+  }, true);
+
+  wrap.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    getWrap()?.classList.add('drop-active');
-  });
-  input.addEventListener('dragleave', () => getWrap()?.classList.remove('drop-active'));
-  input.addEventListener('drop', e => {
+  }, true);
+
+  wrap.addEventListener('drop', e => {
     e.preventDefault();
-    const wrap = getWrap();
-    wrap?.classList.remove('drop-active');
+    e.stopPropagation();
+    _dc = 0;
+    wrap.classList.remove('drop-active');
     const path = _extractDropPath(e);
     if (path) {
       input.value = path;
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      wrap?.classList.add('drop-filled');
-      wrap?.addEventListener('animationend', () => wrap?.classList.remove('drop-filled'), { once: true });
+      wrap.classList.add('drop-filled');
+      wrap.addEventListener('animationend', () => wrap.classList.remove('drop-filled'), { once: true });
     }
-  });
+  }, true);
 }
 
 function setupAllDropZones() {
