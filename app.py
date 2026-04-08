@@ -1074,10 +1074,12 @@ tell application "Finder"
         return POSIX path of (item 1 of sel as alias)
     end if
 end tell"""
+    # 60 s — long enough to survive a macOS "Allow access to external drives"
+    # permission dialog without timing out before the user can respond.
     try:
         r = subprocess.run(
             ["osascript", "-e", _finder_script],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=60,
         )
         if r.returncode == 0 and r.stdout.strip():
             return jsonify({"path": r.stdout.strip().rstrip("/")})
