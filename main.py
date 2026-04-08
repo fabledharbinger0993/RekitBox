@@ -78,4 +78,4 @@ if __name__ == '__main__':
         background_color='#07070f',
     )
 
-    webview.start(debug=True)  # right-click → Inspect Element to open WebKit Inspector
+    webview.start(debug=False)

@@ -1171,6 +1171,46 @@ def api_pick_folder():
 
 # ── Quit ──────────────────────────────────────────────────────────────────────
 
+_SUPERBOX_STATE = Path.home() / ".rekordbox-toolkit" / "superbox-state.json"
+
+
+@app.route("/api/setup-status")
+def api_setup_status():
+    """Return whether the welcome wizard has been completed and saved permissions.
+
+    Backed by ~/.rekordbox-toolkit/superbox-state.json so state survives across
+    pywebview sessions regardless of WKWebView localStorage behaviour.
+    """
+    try:
+        if _SUPERBOX_STATE.exists():
+            state = json.loads(_SUPERBOX_STATE.read_text())
+            return jsonify({
+                "setup_complete": bool(state.get("setup_complete")),
+                "db_read":        state.get("db_read"),
+                "db_write":       state.get("db_write"),
+            })
+    except Exception:
+        pass
+    return jsonify({"setup_complete": False, "db_read": None, "db_write": None})
+
+
+@app.route("/api/setup-complete", methods=["POST"])
+def api_setup_complete():
+    """Persist welcome-wizard completion and permission choices server-side."""
+    try:
+        data  = request.get_json(silent=True) or {}
+        state = {
+            "setup_complete": True,
+            "db_read":  data.get("db_read"),
+            "db_write": data.get("db_write"),
+        }
+        _SUPERBOX_STATE.parent.mkdir(parents=True, exist_ok=True)
+        _SUPERBOX_STATE.write_text(json.dumps(state, indent=2) + "\n")
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/config/set-music-root", methods=["POST"])
 def api_set_music_root():
     """Update music_root in ~/.rekordbox-toolkit/config.json and return the new value."""

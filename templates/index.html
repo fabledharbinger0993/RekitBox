@@ -2005,15 +2005,24 @@ function _welcomeShowReady() {
   welcomeShowStep('ready');
 }
 
-function completeSetup() {
-  localStorage.setItem('superbox-db-read',  _wReadGranted  ? 'granted' : 'denied');
-  localStorage.setItem('superbox-db-write', _wWriteGranted ? 'granted' : 'denied');
+async function completeSetup() {
+  const readVal  = _wReadGranted  ? 'granted' : 'denied';
+  const writeVal = _wWriteGranted ? 'granted' : 'denied';
+  // Mirror to localStorage as fast cache, but truth lives server-side
+  localStorage.setItem('superbox-db-read',        readVal);
+  localStorage.setItem('superbox-db-write',       writeVal);
   localStorage.setItem('superbox-setup-complete', '1');
-  // Archive folder: auto-grant alongside write permission
   if (_wWriteGranted) {
     localStorage.setItem('superbox-archive-permission', 'granted');
     fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
   }
+  // Persist to ~/.rekordbox-toolkit/superbox-state.json so it survives
+  // across pywebview sessions even if WKWebView clears localStorage
+  await fetch('/api/setup-complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ db_read: readVal, db_write: writeVal }),
+  }).catch(() => {});
   applyPermissions();
   closeWelcome();
   if (_wReadGranted) {
@@ -2272,16 +2281,38 @@ async function refreshStatus() {
 refreshStatus();
 setInterval(refreshStatus, 6000);
 // First launch: show permission wizard (mandatory, can't skip).
-// Returning users: apply stored permissions and resume silently.
-if (!localStorage.getItem('superbox-setup-complete')) {
-  openWelcome();
-} else {
-  applyPermissions();
-  // Re-run archive setup silently on every launch in case drive was remounted
-  if (localStorage.getItem('superbox-archive-permission') === 'granted') {
-    fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
+// Returning users: restore permissions from server-side state file, resume silently.
+// Server-side state (/api/setup-status → superbox-state.json) is the source of
+// truth; localStorage is used as a fast-path cache on top of it.
+(async () => {
+  try {
+    const r = await fetch('/api/setup-status');
+    const d = await r.json();
+    if (d.setup_complete) {
+      // Restore permission values from server into localStorage so applyPermissions works
+      if (d.db_read)  localStorage.setItem('superbox-db-read',  d.db_read);
+      if (d.db_write) localStorage.setItem('superbox-db-write', d.db_write);
+      localStorage.setItem('superbox-setup-complete', '1');
+      applyPermissions();
+      if (d.db_write === 'granted') {
+        localStorage.setItem('superbox-archive-permission', 'granted');
+        fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
+      }
+    } else {
+      openWelcome();
+    }
+  } catch (_) {
+    // Server not yet ready — fall back to localStorage cache
+    if (!localStorage.getItem('superbox-setup-complete')) {
+      openWelcome();
+    } else {
+      applyPermissions();
+      if (localStorage.getItem('superbox-archive-permission') === 'granted') {
+        fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
+      }
+    }
   }
-}
+})();
 
 function choosePath(mode) {
   _sbAnim(document.getElementById('path-modal-box'), 'sb-modal-out', '.18s', () => {
