@@ -3978,15 +3978,25 @@ openLog  = function(t) { _origOpenLog(t);  document.body.classList.add('log-open
 closeLog = function()   { _origCloseLog();  document.body.classList.remove('log-open'); };
 
 /* ── Drag-and-drop path extraction ─────────────────────────────────────── */
-/* macOS Finder drag exposes file:///path via text/uri-list.                 */
-/* Strips the file://[authority] prefix and URI-decodes the result.          */
-/* Falls back to text/plain for terminal-style drags (absolute paths only).  */
+/* Three strategies in priority order:                                        */
+/* 1. file.path   — Chromium exposes the real OS path directly on the File   */
+/*                  object when dropped from Finder. Most reliable on macOS.  */
+/* 2. text/uri-list — standard HTML5 drag format: file:///path. Works when   */
+/*                    Finder includes URI list data (not always guaranteed).   */
+/* 3. text/plain  — fallback for terminal-style drags (absolute paths only). */
 function _extractDropPath(e) {
+  // Strategy 1: Chromium File.path — real filesystem path, no decoding needed
+  const files = e.dataTransfer.files;
+  if (files && files.length > 0 && files[0].path) {
+    return files[0].path.replace(/\/$/, '');
+  }
+  // Strategy 2: text/uri-list (standard HTML5, Finder usually provides this)
   const uriList = e.dataTransfer.getData('text/uri-list');
   if (uriList) {
     const first = uriList.trim().split(/\r?\n/).find(l => /^file:\/\//i.test(l) && !l.startsWith('#'));
     if (first) return decodeURIComponent(first.replace(/^file:\/\/[^/]*/i, '').replace(/\/$/, ''));
   }
+  // Strategy 3: text/plain fallback (terminal drags, absolute paths only)
   const plain = e.dataTransfer.getData('text/plain');
   if (plain) {
     const t = plain.trim();
