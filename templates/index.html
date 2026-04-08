@@ -4015,7 +4015,16 @@ document.addEventListener('dragenter', () => {
 document.addEventListener('dragleave', () => {
   if (--_docDragCount <= 0) { _docDragCount = 0; document.body.classList.remove('has-drag'); }
 });
-document.addEventListener('drop', () => { _docDragCount = 0; document.body.classList.remove('has-drag'); }, true);
+// Capture-phase drop on document: prevent Chrome from navigating to the
+// dropped file (its default behaviour) and reset the drag-state counter.
+// Zone handlers still call e.preventDefault() individually — this is the
+// safety net for any drop that lands outside a wired zone.
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  _docDragCount = 0;
+  document.body.classList.remove('has-drag');
+}, true);
 
 /* ── Folder pill zone system ────────────────────────────────────────────────
    Replaces single-path text inputs for all "source folder" type cards.
