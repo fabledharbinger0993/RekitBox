@@ -137,7 +137,9 @@ header {
   align-items: center;
   gap: 12px;
   padding: 8px 24px;
+  background: var(--safe-dim, rgba(34, 197, 94, 0.10));
   background: color-mix(in srgb, var(--safe) 10%, var(--surface));
+  border-bottom: 1px solid var(--safe-border, rgba(34, 197, 94, 0.30));
   border-bottom: 1px solid color-mix(in srgb, var(--safe) 30%, transparent);
   font-size: .82rem;
   color: var(--text);
@@ -148,7 +150,9 @@ header {
   align-items: center;
   gap: 12px;
   padding: 8px 24px;
+  background: var(--accent-dim, rgba(139, 92, 246, 0.12));
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-bottom: 1px solid rgba(139, 92, 246, 0.35);
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   font-size: .82rem;
   color: var(--text);

@@ -61,7 +61,7 @@ exe = EXE(
     name='SuperBox',
     debug=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,           # no terminal window
     argv_emulation=False,
     target_arch=None,        # universal2 can be forced here if needed
@@ -76,7 +76,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='SuperBox',
 )
