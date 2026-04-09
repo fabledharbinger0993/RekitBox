@@ -1228,6 +1228,17 @@ def api_set_music_root():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/migrate-pioneer-db")
+def api_migrate_pioneer_db():
+    """Stream progress of migrating ~/Library/Pioneer/rekordbox/ to the target drive."""
+    from flask import request as _req
+    target = _req.args.get("target", "").strip()
+    if not target:
+        return jsonify({"error": "target parameter required"}), 400
+    from db_migrator import migrate
+    return Response(migrate(target), mimetype="text/event-stream")
+
+
 @app.route("/api/quit", methods=["POST"])
 def api_quit():
     """Shut the server down cleanly after sending the response."""

@@ -345,7 +345,16 @@
       </div>
       <div class="field">
         <label>Save Report To (optional)</label>
-        <input type="text" id="dupes-output" placeholder="~/Desktop/duplicates.csv  (default: ~/rekordbox-toolkit/duplicate_report.csv)">
+        <div class="folder-zone" id="dupes-output-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop destination here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="dupes-output" placeholder="~/Desktop/duplicates.csv  (default: ~/rekordbox-toolkit/duplicate_report.csv)">
+            <button class="folder-zone-browse" type="button" onclick="pickPathFor('dupes-output')">Browse…</button>
+          </div>
+        </div>
       </div>
       <div class="field">
         <label>Parallel Workers <span style="font-size:.75rem;color:var(--text-dim);font-weight:400;">— fpcalc processes to run simultaneously (your Mac has 8 cores)</span></label>
@@ -1037,6 +1046,33 @@
       <div class="btn-row">
         <button class="btn btn-neon" id="btn-organize" onclick="runOrganize()">Scan &amp; Organize</button>
       </div>
+
+      <!-- ── Rekordbox library migration ──────────────────────────────────── -->
+      <div class="migrate-db-section">
+        <div class="migrate-db-header" onclick="toggleMigrateSection()">
+          <span class="migrate-db-chevron" id="migrate-db-chevron">▸</span>
+          <strong>Move Rekordbox Library to Drive</strong>
+          <span class="risk-badge danger" style="margin-left:auto">Moves DB + Symlink</span>
+        </div>
+        <div class="migrate-db-body" id="migrate-db-body" style="display:none">
+          <p class="migrate-db-blurb">
+            Moves <code>~/Library/Pioneer/rekordbox/</code> (master.db, playlists, analysis) to
+            <code>&lt;drive&gt;/Pioneer/rekordbox/</code> and replaces the original with a symlink.
+            Rekordbox continues to work normally — the data lives on the drive.
+            <strong>Rekordbox must be closed.</strong>
+          </p>
+          <div class="migrate-db-confirm-row" id="migrate-db-step1">
+            <label class="checkbox-label" style="color:var(--warn);font-weight:600;">
+              <input type="checkbox" id="migrate-confirm-cb" onchange="migrateCbChanged()">
+              I understand this moves my Rekordbox database to the target drive
+            </label>
+            <button class="btn btn-danger-outline" id="btn-migrate-db" disabled
+                    onclick="runMigrateDb()">
+              Move Library to Drive →
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1089,7 +1125,16 @@
       </div>
       <div class="field">
         <label>Destination (Home Library)</label>
-        <input type="text" id="novelty-dest" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+        <div class="folder-zone" id="novelty-dest-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop destination folder here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="novelty-dest" placeholder="/Volumes/DJMT/DJMT PRIMARY">
+            <button class="folder-zone-browse" type="button" onclick="pickPathFor('novelty-dest')">Browse…</button>
+          </div>
+        </div>
       </div>
       <div class="field">
         <div class="checkbox-row">

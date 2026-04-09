@@ -570,10 +570,11 @@ function lsLoad(id) {
 }
 
 async function prefillDefaults() {
-  // Single-path text inputs that still map to the music root
-  const rootFields = ['relocate-new', 'organize-target', 'novelty-dest'];
-  // Free fields — user-specific, restore from localStorage only
-  const freeFields = ['relocate-old', 'dupes-output'];
+  // No fields are auto-filled from the music root — leaving destination inputs
+  // blank prevents accidental runs against an unconfigured path.
+  // All fields restore from localStorage only (user's own previous entries).
+  const rootFields = [];
+  const freeFields = ['relocate-new', 'organize-target', 'novelty-dest', 'relocate-old', 'dupes-output'];
 
   // Restore any previously saved value for every tracked field first
   [...rootFields, ...freeFields].forEach(id => {
@@ -978,7 +979,17 @@ function runDuplicates() {
   if (out) p.set('output', out);
   const workers = document.getElementById('dupes-workers')?.value || '4';
   if (parseInt(workers) > 1) p.set('workers', workers);
-  runCommand(`/api/run/duplicates?${p}`, 'Find Duplicates — Acoustic Fingerprinting', null, true, true);
+  const title = 'Find Duplicates — Acoustic Fingerprinting';
+  runCommand(`/api/run/duplicates?${p}`, title, (exitCode) => {
+    if (exitCode === 0) {
+      // Auto-populate Prune's CSV path from the report this run just produced
+      const rp = sessionReports[title]?.reportPath;
+      if (rp) {
+        const el = document.getElementById('prune-csv-path');
+        if (el) { el.value = rp; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      }
+    }
+  }, true, true);
 }
 
 function runConvert() {
@@ -2505,9 +2516,28 @@ function _extractDropPath(e) {
 /* ── Global drag-state class ────────────────────────────────────────────── */
 /* Adds body.has-drag while a drag is in flight so CSS can highlight all     */
 /* available drop zones simultaneously.                                       */
+/* Also pre-fetches Finder's selection on the very first dragenter — at that  */
+/* point Finder still has the dragged item selected (pywebview hasn't taken   */
+/* full focus yet). This cached path is used as a fallback on drop, because   */
+/* by the time drop fires pywebview has focused and Finder clears its         */
+/* selection, causing the post-drop osascript query to return empty.          */
 let _docDragCount = 0;
+let _finderPathCache = null;   // prefetched on first dragenter, consumed on drop
+let _finderPrefetching = false;
 document.addEventListener('dragenter', () => {
-  if (++_docDragCount === 1) document.body.classList.add('has-drag');
+  if (++_docDragCount === 1) {
+    document.body.classList.add('has-drag');
+    // Prefetch Finder selection while the item is still selected in Finder
+    if (!_finderPrefetching) {
+      _finderPrefetching = true;
+      _finderPathCache = null;
+      fetch('/api/finder-selection?source=drop')
+        .then(r => r.json())
+        .then(d => { _finderPathCache = d.path || null; })
+        .catch(() => {})
+        .finally(() => { _finderPrefetching = false; });
+    }
+  }
 });
 document.addEventListener('dragleave', () => {
   if (--_docDragCount <= 0) { _docDragCount = 0; document.body.classList.remove('has-drag'); }
@@ -2792,41 +2822,41 @@ function _promptSetLibraryRoot(newPath) {
   `;
 }
 
-async function dropFolderFor(pillsId) {
-  // Brief pause: give macOS time to deliver the drop before querying Finder.
-  await new Promise(res => setTimeout(res, 120));
-  console.log(`[dropFolderFor] fetching finder-selection for pillsId=${pillsId}`);
-  const r = await fetch('/api/finder-selection?source=drop');
-  const d = await r.json();
-  console.log(`[dropFolderFor] response:`, d);
-  if (d.path) {
-    console.log(`[dropFolderFor] adding pill: ${d.path} → ${pillsId}`);
-    addFolderPill(pillsId, d.path);
-  } else {
-    console.log(`[dropFolderFor] null on first try, retrying in 400ms…`);
-    // Retry once — pywebview focus shift can briefly clear Finder's selection
+async function _resolveDropPath() {
+  // Use the path prefetched at dragenter — it was read before pywebview took
+  // focus and Finder cleared its selection. If the prefetch is still in flight,
+  // wait briefly for it; if it already finished, consume the cached value.
+  if (_finderPrefetching) await new Promise(res => setTimeout(res, 200));
+  if (_finderPathCache) {
+    const p = _finderPathCache;
+    _finderPathCache = null;
+    console.log(`[resolveDropPath] using prefetched cache: ${p}`);
+    return p;
+  }
+  // Cache miss (e.g. prefetch failed or was too slow) — fall back to a fresh query
+  console.log(`[resolveDropPath] cache miss, querying finder-selection`);
+  try {
+    const r = await fetch('/api/finder-selection?source=drop');
+    const d = await r.json();
+    if (d.path) return d.path;
+    // One retry after a short delay
     await new Promise(res => setTimeout(res, 400));
     const r2 = await fetch('/api/finder-selection?source=drop');
     const d2 = await r2.json();
-    console.log(`[dropFolderFor] retry response:`, d2);
-    if (d2.path) addFolderPill(pillsId, d2.path);
-  }
+    return d2.path || null;
+  } catch { return null; }
+}
+
+async function dropFolderFor(pillsId) {
+  const path = await _resolveDropPath();
+  console.log(`[dropFolderFor] resolved: ${path} → ${pillsId}`);
+  if (path) addFolderPill(pillsId, path);
 }
 async function dropPathFor(inputId) {
-  await new Promise(res => setTimeout(res, 120));
-  const r = await fetch('/api/finder-selection?source=drop');
-  const d = await r.json();
-  if (d.path) {
+  const path = await _resolveDropPath();
+  if (path) {
     const el = document.getElementById(inputId);
-    if (el) { el.value = d.path; el.dispatchEvent(new Event('input', { bubbles: true })); }
-  } else {
-    await new Promise(res => setTimeout(res, 400));
-    const r2 = await fetch('/api/finder-selection?source=drop');
-    const d2 = await r2.json();
-    if (d2.path) {
-      const el = document.getElementById(inputId);
-      if (el) { el.value = d2.path; el.dispatchEvent(new Event('input', { bubbles: true })); }
-    }
+    if (el) { el.value = path; el.dispatchEvent(new Event('input', { bubbles: true })); }
   }
 }
 
@@ -2899,10 +2929,7 @@ function setupDropZone(input) {
 }
 
 function setupAllDropZones() {
-  // Single-path inputs that keep the legacy drop-wrap style
-  [
-    'dupes-output', 'novelty-dest',
-  ].forEach(id => { const el = document.getElementById(id); if (el) setupDropZone(el); });
+  // No legacy plain inputs remain — all zones now use setupSinglePathZone / setupFolderZone
 }
 
 /* Wire all drop zones once the DOM is confirmed ready */
@@ -2922,7 +2949,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSinglePathZone('relocate-new-zone',    'relocate-new');
   setupSinglePathZone('prune-csv-zone',       'prune-csv-path');
   setupSinglePathZone('organize-target-zone', 'organize-target');
-  // Legacy single-path inputs (dupes output, settings, etc.)
+  setupSinglePathZone('dupes-output-zone',    'dupes-output');
+  setupSinglePathZone('novelty-dest-zone',    'novelty-dest');
   setupAllDropZones();
 });
 
