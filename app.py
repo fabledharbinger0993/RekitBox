@@ -1241,6 +1241,39 @@ def api_pick_folder():
     return jsonify({"path": None})
 
 
+@app.route("/api/fs/list")
+def api_fs_list():
+    """Lightweight directory listing for the in-app file browser panel.
+
+    Returns folders first (sorted), then audio files, then everything else.
+    Hidden files (dot-prefixed) are always omitted.
+    """
+    AUDIO_EXTS = {'.aiff', '.aif', '.wav', '.flac', '.mp3', '.m4a', '.alac', '.ogg', '.opus', '.mp4'}
+    path_str = request.args.get("path", "/Volumes")
+    p = Path(path_str)
+    if not p.exists() or not p.is_dir():
+        return jsonify({"error": f"Not a directory: {path_str}"}), 400
+    try:
+        entries = []
+        for item in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if item.name.startswith('.'):
+                continue
+            is_dir = item.is_dir()
+            entries.append({
+                "name":     item.name,
+                "path":     str(item),
+                "is_dir":   is_dir,
+                "is_audio": not is_dir and item.suffix.lower() in AUDIO_EXTS,
+            })
+    except PermissionError:
+        return jsonify({"error": "Permission denied"}), 403
+    return jsonify({
+        "path":    str(p),
+        "parent":  str(p.parent) if str(p) != str(p.parent) else None,
+        "entries": entries,
+    })
+
+
 # ── Quit ──────────────────────────────────────────────────────────────────────
 
 _SUPERBOX_STATE = Path.home() / ".rekordbox-toolkit" / "superbox-state.json"

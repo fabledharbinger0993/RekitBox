@@ -1375,6 +1375,24 @@
 </footer>
 
 <!-- ══ Floating action buttons ══════════════════════════════════════════════ -->
+<!-- ── File Browser toggle ─────────────────────────────────────────────────── -->
+<div id="fb-toggle-btn" onclick="toggleFileBrowser()" title="Browse files (⌘B)">
+  <img src="/static/icon-sb-folder.png" style="width:26px;height:26px;object-fit:contain">
+</div>
+
+<!-- ══ File Browser Panel ═══════════════════════════════════════════════════ -->
+<div id="fb-panel">
+  <div id="fb-header">
+    <div id="fb-breadcrumb-row">
+      <button class="fb-nav-btn" id="fb-up-btn"   onclick="fbUp()"   title="Go up">↑</button>
+      <div id="fb-breadcrumb"></div>
+      <button class="fb-nav-btn" id="fb-home-btn"  onclick="fbHome()" title="Volumes">⌂</button>
+    </div>
+  </div>
+  <div id="fb-list"></div>
+  <div id="fb-drag-hint">Drag any item to a drop zone ↗</div>
+</div>
+
 <!-- ── Pipeline Wizard button ─────────────────────────────────────────────── -->
 <div id="pipeline-btn" onclick="openPipelineWizard()" title="Pipeline Wizard">
   <img src="/static/icon-start-wizard.png" style="width:24px;height:24px;object-fit:contain">

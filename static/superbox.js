@@ -3,6 +3,100 @@ let activeSource = null;
 let isRunning    = false;
 let rbRunning    = false;
 
+/* ── File Browser Panel ─────────────────────────────────────────────────────── */
+let _fbCurrentPath = '/Volumes';
+
+function toggleFileBrowser() {
+  const panel = document.getElementById('fb-panel');
+  const btn   = document.getElementById('fb-toggle-btn');
+  const isOpen = panel.classList.toggle('fb-open');
+  btn.classList.toggle('active', isOpen);
+  if (isOpen) fbNavigateTo(_fbCurrentPath);
+}
+
+async function fbNavigateTo(path) {
+  _fbCurrentPath = path;
+  const list = document.getElementById('fb-list');
+  list.innerHTML = '<div class="fb-empty">Loading…</div>';
+
+  let data;
+  try {
+    const res = await fetch(`/api/fs/list?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error(await res.text());
+    data = await res.json();
+  } catch (_) {
+    list.innerHTML = '<div class="fb-error">Could not read this folder</div>';
+    return;
+  }
+
+  // Breadcrumb — show current path reversed so deepest segment stays visible
+  const crumb = document.getElementById('fb-breadcrumb');
+  const crumbSpan = document.createElement('span');
+  crumbSpan.textContent = data.path || '/';
+  crumb.innerHTML = '';
+  crumb.appendChild(crumbSpan);
+
+  // Up button
+  const upBtn = document.getElementById('fb-up-btn');
+  upBtn.disabled = !data.parent;
+  upBtn._fbParent = data.parent || null;
+
+  // Render entries
+  list.innerHTML = '';
+  if (!data.entries || data.entries.length === 0) {
+    list.innerHTML = '<div class="fb-empty">Empty folder</div>';
+    return;
+  }
+
+  data.entries.forEach(entry => {
+    const cls  = entry.is_dir ? 'fb-dir' : entry.is_audio ? 'fb-audio' : 'fb-file';
+    const item = document.createElement('div');
+    item.className  = `fb-item ${cls}`;
+    item.draggable  = true;
+    item.dataset.path = entry.path;
+
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = entry.is_dir   ? '/static/icon-sb-folder.png'
+            : entry.is_audio ? '/static/icon-sb-track.png'
+            :                  '/static/icon-sb-file.png';
+    img.onerror = () => { img.src = '/static/icon-sb-file.png'; };
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'fb-item-name';
+    nameEl.textContent = entry.name;
+    nameEl.title = entry.name;
+
+    item.appendChild(img);
+    item.appendChild(nameEl);
+
+    // Navigate into folders on click
+    if (entry.is_dir) {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fbNavigateTo(entry.path);
+      });
+    }
+
+    // Drag — Strategy 3 (text/plain) is picked up by all existing drop zones
+    item.addEventListener('dragstart', e => {
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', entry.path);
+      item.classList.add('fb-dragging');
+    });
+    item.addEventListener('dragend', () => item.classList.remove('fb-dragging'));
+
+    list.appendChild(item);
+  });
+}
+
+function fbUp() {
+  const btn = document.getElementById('fb-up-btn');
+  if (btn._fbParent) fbNavigateTo(btn._fbParent);
+}
+
+function fbHome() { fbNavigateTo('/Volumes'); }
+
 /* ── Step completion report modal ─────────────────────────────────────────── */
 // Session-only storage — cleared when the page reloads / server stops.
 const sessionReports = {};
@@ -2590,6 +2684,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeSettings();
     closeReportModal();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+    e.preventDefault();
+    toggleFileBrowser();
   }
 });
 
