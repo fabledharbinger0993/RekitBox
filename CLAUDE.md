@@ -22,10 +22,23 @@ That's it. This file will orient the session.
 - **Frontend:** Single HTML template (`templates/index.html`) + extracted stylesheet (`static/rekitbox.css`)
 - **Launch:** `launch.sh` → sets up venv, pulls latest, starts Waitress on `localhost:5001`, opens browser. Wrapped as a Mac `.app` via Automator for dock access.
 
+## Mobile backend (RekitGo companion app)
+`app.py` includes a full `/api/mobile/*` REST + WebSocket API for the RekitGo iOS app.
+- Bearer token auth (`mobile_token` in `~/.rekordbox-toolkit/config.json`)
+- `GET /api/mobile/ping` — health check (no auth)
+- `GET /api/mobile/folders` / `/folders/<path>/files` — browse music folders
+- `POST /api/mobile/download` — trigger server-side download; progress via WebSocket
+- `GET/POST/PUT/DELETE /api/mobile/rekordbox/playlists` — full playlist CRUD
+- `POST /api/mobile/rekordbox/analyze` — BPM/key analysis job; progress via WebSocket
+- `GET /api/mobile/drives` — list connected drives (pioneer=true for CDJ-format drives)
+- `POST /api/mobile/export` — export playlists to USB Pioneer drive
+- `WS /api/mobile/events` — real-time event bus (flask-sock)
+- `ws_bus.py` — thread-safe WebSocket broadcast registry
+
 ## Project structure
 ```
 RekitBox/
-├── app.py                  # Flask routes + SSE streaming
+├── app.py                  # Flask routes + SSE streaming + mobile API
 ├── scanner.py              # Filesystem audio scanner
 ├── duplicate_detector.py   # Chromaprint fingerprinting + pre-filter by key/BPM/duration
 ├── audio_processor.py      # BPM/key detection via librosa, writes scan_index.json
