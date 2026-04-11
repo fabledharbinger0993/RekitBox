@@ -43,8 +43,8 @@ cat > "$APP_PATH/Contents/MacOS/RekitBox" << LAUNCHER
 # RekitBox bootstrap launcher
 # First run: clones the repo. Every run: hands off to launch.sh.
 
-PARENT_DIR="$HOME/RekitBox"
-INSTALL_DIR="$PARENT_DIR/RekitBox"
+PARENT_DIR="\$HOME/RekitBox"
+INSTALL_DIR="\$PARENT_DIR/RekitBox"
 REPO_URL="$REPO_URL"
 
 if [ -d "\$INSTALL_DIR/.git" ]; then
