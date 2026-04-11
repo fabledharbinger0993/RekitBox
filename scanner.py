@@ -23,7 +23,11 @@ from typing import Iterator
 from mutagen import File as MutagenFile
 from mutagen.id3 import ID3NoHeaderError
 
-from config import AUDIO_EXTENSIONS, BPM_MAX, BPM_MIN, SKIP_DIRS, SKIP_PREFIXES
+from config import AUDIO_EXTENSIONS, BPM_MAX, BPM_MIN, MIN_FILE_BYTES, SKIP_DIRS, SKIP_PREFIXES
+
+# Formats where having no tags at all is normal and shouldn't be a WARNING.
+# WAV and AIFF files frequently have no ID3/metadata and are still valid audio.
+_TAG_OPTIONAL_EXTS = {".wav", ".aif", ".aiff"}
 
 log = logging.getLogger(__name__)
 
@@ -223,6 +227,12 @@ def _should_skip_file(path: Path) -> bool:
         return True
     if path.suffix.lower() not in AUDIO_EXTENSIONS:
         return True
+    try:
+        if path.stat().st_size < MIN_FILE_BYTES:
+            log.debug("Skipping %s — file too small (%d bytes)", name, path.stat().st_size)
+            return True
+    except OSError:
+        pass
     return False
 
 
@@ -275,7 +285,12 @@ def scan_directory(
                 continue
 
             if track.errors:
-                log.warning("Errors reading %s: %s", file_path.name, track.errors)
+                # "no tags found" on WAV/AIFF is normal — log at DEBUG, not WARNING.
+                no_tag_only = track.errors == ["no tags found"]
+                if no_tag_only and file_path.suffix.lower() in _TAG_OPTIONAL_EXTS:
+                    log.debug("No tags in %s (expected for %s)", file_path.name, file_path.suffix)
+                else:
+                    log.warning("Errors reading %s: %s", file_path.name, track.errors)
 
             yield track
 

@@ -128,8 +128,16 @@ ACOUSTID_API_KEY: str = _cfg.get("acoustid_api_key", "")
 # Supported audio file extensions (lowercase)
 AUDIO_EXTENSIONS = {".mp3", ".aiff", ".aif", ".wav", ".flac", ".m4a", ".ogg", ".opus"}
 
-# Files to skip when scanning (macOS metadata, hidden files)
-SKIP_PREFIXES = ("._", ".")
+# Files to skip when scanning.
+# "._"       — macOS resource fork sidecar files
+# "."        — hidden files (.DS_Store, etc.)
+# "_ ("      — download-manager junk files named "_ (1).mp3", "_ (58).mp3", etc.
+# "INCOMPLETE~" — partial/interrupted downloads left by download managers
+SKIP_PREFIXES = ("._", ".", "_ (", "INCOMPLETE~")
+
+# Minimum file size in bytes — anything smaller is corrupt/empty and skipped.
+# 8 bytes is mutagen's own minimum for a parseable header.
+MIN_FILE_BYTES: int = 8
 
 # Base set of directory names to never descend into while scanning the music root.
 # Covers Pioneer system folders, macOS internals, and common non-music app data.
