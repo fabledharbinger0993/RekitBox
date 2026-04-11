@@ -84,10 +84,69 @@ class ProcessResult:
     skipped_key: bool = False
     skipped_loudness: bool = False
     errors: list[str] = field(default_factory=list)
+    quarantined: bool = False        # True if file was moved to the quarantine folder
+    quarantine_dest: Path | None = None  # Where it was moved to
 
     @property
     def ok(self) -> bool:
         return len(self.errors) == 0
+
+
+# Error substrings that indicate a file is unreadable/corrupt at the binary level.
+# These are distinct from soft failures (tag write failed, no tags found, etc.)
+# that don't mean the audio data is broken.
+_CORRUPT_ERRORS: tuple[str, ...] = (
+    "mutagen could not open file",
+    "mutagen open failed",
+    "Header size < 8",
+    "No 'fmt' chunk found",
+    "can't sync to MPEG frame",
+    "unrecognized format",
+    "could not read tags",
+)
+
+
+def is_corrupt(result: ProcessResult) -> bool:
+    """Return True if this result represents a file that cannot be read at all."""
+    return any(
+        any(sig in err for sig in _CORRUPT_ERRORS)
+        for err in result.errors
+    )
+
+
+def quarantine_file(result: ProcessResult, quarantine_dir: Path) -> bool:
+    """
+    Move result.path into quarantine_dir, preserving the filename.
+    If a file with the same name already exists there, append a counter suffix.
+
+    Returns True if the move succeeded; updates result.quarantined and
+    result.quarantine_dest in place.
+    """
+    src = result.path
+    if not src.exists():
+        return False
+
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = quarantine_dir / src.name
+    # Avoid silently overwriting a different file with the same name
+    if dest.exists():
+        stem, suffix = src.stem, src.suffix
+        for n in range(1, 10_000):
+            candidate = quarantine_dir / f"{stem}_{n}{suffix}"
+            if not candidate.exists():
+                dest = candidate
+                break
+
+    try:
+        src.rename(dest)
+        result.quarantined = True
+        result.quarantine_dest = dest
+        log.info("Quarantined %s → %s", src.name, dest)
+        return True
+    except OSError as exc:
+        log.warning("Could not quarantine %s: %s", src.name, exc)
+        return False
 
 
 # ─── BPM detection ────────────────────────────────────────────────────────────
@@ -500,6 +559,7 @@ def process_directory(
     force: bool = False,
     max_workers: int = 1,
     pause_seconds: float = 0.0,
+    quarantine_dir: Path | None = None,
 ) -> list[ProcessResult]:
     """
     Process all audio files under root. Returns all ProcessResults.
@@ -520,6 +580,10 @@ def process_directory(
         Seconds to sleep between files (sequential mode only). Use this to
         keep CPU load below 100% on slower machines or when DJing on the
         same computer. Default 0.0 (no pause).
+    quarantine_dir : Path | None
+        If provided, any file whose result is corrupt (cannot be opened
+        at the binary level) is moved here after processing. Pass the
+        RekitBox Archive Quarantine path from config or a custom location.
     """
     import concurrent.futures
     from scanner import scan_directory
@@ -544,6 +608,7 @@ def process_directory(
     edited = 0
     tags_written = 0
     bpm_key_written = 0
+    quarantined = 0
 
     def _emit_progress() -> None:
         print(
@@ -556,15 +621,18 @@ def process_directory(
                 "edited":        edited,
                 "tags_written":  tags_written,
                 "bpm_key_written": bpm_key_written,
+                "quarantined":   quarantined,
             }),
             flush=True,
         )
 
     def _tally(r: ProcessResult) -> None:
-        nonlocal done, clean, errors, edited, tags_written, bpm_key_written
+        nonlocal done, clean, errors, edited, tags_written, bpm_key_written, quarantined
         done += 1
         if r.errors:
             errors += 1
+        if r.quarantined:
+            quarantined += 1
         any_edit = r.bpm_written or r.key_written or r.normalised
         if any_edit:
             edited += 1
@@ -573,6 +641,9 @@ def process_directory(
             tags_written += 1  # all writes: bpm, key, or normalisation
         elif r.ok:
             clean += 1
+        # Quarantined files are gone from their original path — don't index them
+        if r.quarantined:
+            return
         # Build scan index entry — duration via soundfile header (fast, no decode)
         try:
             duration_sec = round(sf.info(str(r.path)).duration, 1)
@@ -612,9 +683,15 @@ def process_directory(
             normalise=normalise,
             force=force,
         )
-        log.info("[%d/%d] %s%s",
-                 index, total, track.path.name,
-                 "  ✗ errors: " + ", ".join(r.errors) if r.errors else "")
+        if r.errors:
+            log.info("[%d/%d] %s  ✗ errors: %s",
+                     index, total, track.path.name, ", ".join(r.errors))
+        else:
+            log.info("[%d/%d] %s", index, total, track.path.name)
+        # Quarantine corrupt files immediately after processing
+        if quarantine_dir and is_corrupt(r):
+            quarantine_file(r, quarantine_dir)
+            log.warning("QUARANTINED: %s → %s", track.path.name, quarantine_dir)
         return r
 
     scan_index: list[dict] = []   # accumulates entries for scan_index.json

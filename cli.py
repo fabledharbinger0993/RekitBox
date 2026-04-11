@@ -461,6 +461,13 @@ def cmd_process(args: argparse.Namespace) -> None:
             "Ensure your files are backed up independently before proceeding."
         )
 
+    # Determine quarantine directory: one level above the first root, named QUARANTINE
+    try:
+        from config import QUARANTINE_DIR as _cfg_quarantine
+        _quarantine_dir = _cfg_quarantine
+    except Exception:
+        _quarantine_dir = roots[0].parent / "QUARANTINE"
+
     all_results = []
     root_sections: list[tuple[Path, str]] = []
     for index, root in enumerate(roots, start=1):
@@ -473,6 +480,7 @@ def cmd_process(args: argparse.Namespace) -> None:
                 normalise=normalise,
                 force=args.force,
                 max_workers=max(1, args.workers),
+                quarantine_dir=_quarantine_dir,
             )
             all_results.extend(results)
             root_total = len(results)
@@ -480,6 +488,7 @@ def cmd_process(args: argparse.Namespace) -> None:
             root_key_written = sum(1 for r in results if r.key_written)
             root_normalised = sum(1 for r in results if r.normalised)
             root_errored = sum(1 for r in results if not r.ok)
+            root_quarantined = sum(1 for r in results if r.quarantined)
             root_skipped_bpm = sum(1 for r in results if r.skipped_bpm)
             root_skipped_key = sum(1 for r in results if r.skipped_key)
             root_lines = [f"{root_total} files were analyzed."]
@@ -493,6 +502,8 @@ def cmd_process(args: argparse.Namespace) -> None:
                 )
             if normalise:
                 root_lines.append(f"Loudness adjusted: {root_normalised} files.")
+            if root_quarantined:
+                root_lines.append(f"{root_quarantined} corrupt files moved to QUARANTINE — see report.")
             if root_errored:
                 root_lines.append(f"{root_errored} files had errors — check the log above.")
             root_sections.append((root, "\n".join(root_lines)))
@@ -505,6 +516,8 @@ def cmd_process(args: argparse.Namespace) -> None:
     key_written = sum(1 for r in all_results if r.key_written)
     normalised = sum(1 for r in all_results if r.normalised)
     errored = sum(1 for r in all_results if not r.ok)
+    quarantined_results = [r for r in all_results if r.quarantined]
+    quarantined = len(quarantined_results)
     skipped_bpm = sum(1 for r in all_results if r.skipped_bpm)
     skipped_key = sum(1 for r in all_results if r.skipped_key)
 
@@ -538,6 +551,22 @@ def cmd_process(args: argparse.Namespace) -> None:
         ]
         if errored:
             report_lines.append(f"\n{errored} files had errors — check the log above.")
+
+    # Quarantine section — always append if any files were quarantined
+    if quarantined:
+        report_lines.append(
+            f"\n{'─' * 60}\n"
+            f"QUARANTINED: {quarantined} corrupt file(s) moved to:\n"
+            f"  {_quarantine_dir}\n"
+            f"\nThese files could not be opened by the audio library at all.\n"
+            f"They are safe to inspect or restore manually from QUARANTINE.\n"
+            f"They will be skipped by all future RekitBox operations.\n"
+            f"\nQuarantined files:"
+        )
+        for r in quarantined_results:
+            error_summary = "; ".join(r.errors)
+            report_lines.append(f"  {r.path.name}  [{error_summary}]")
+        report_lines.append("")
 
     report_text = _append_root_breakdown("\n".join(report_lines), root_sections)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

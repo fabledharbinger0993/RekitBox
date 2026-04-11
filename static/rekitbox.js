@@ -751,11 +751,13 @@ function showScanBar(title) {
   ib.textContent = '⏸ Interrupt'; ib.disabled = false; ib.style.display = 'inline-block';
   const eb = document.getElementById('scan-bar-emergency');
   eb.textContent = '⚡ Emergency Stop'; eb.disabled = false; eb.style.display = 'inline-block';
-  document.getElementById('sb-remaining').textContent = '—';
-  document.getElementById('sb-clean').textContent     = '0';
-  document.getElementById('sb-edited').textContent    = '0';
-  document.getElementById('sb-errors').textContent    = '0';
-  document.getElementById('sb-warnings').textContent  = '0';
+  document.getElementById('sb-remaining').textContent    = '—';
+  document.getElementById('sb-clean').textContent        = '0';
+  document.getElementById('sb-edited').textContent       = '0';
+  document.getElementById('sb-errors').textContent       = '0';
+  document.getElementById('sb-warnings').textContent     = '0';
+  document.getElementById('sb-quarantined').textContent  = '0';
+  document.getElementById('sb-quarantine-wrap').style.display = 'none';
   document.getElementById('scan-bar-title').textContent = title;
   document.getElementById('scan-bar-spinner').classList.add('active');
   document.getElementById('scan-bar-dismiss').style.display = 'none';
@@ -768,6 +770,10 @@ function updateScanBar(p) {
   document.getElementById('sb-edited').textContent    = p.edited.toLocaleString();
   document.getElementById('sb-errors').textContent    = p.errors.toLocaleString();
   document.getElementById('sb-warnings').textContent  = scanWarnings.toLocaleString();
+  if (p.quarantined > 0) {
+    document.getElementById('sb-quarantined').textContent = p.quarantined.toLocaleString();
+    document.getElementById('sb-quarantine-wrap').style.display = '';
+  }
 }
 function finishScanBar() {
   document.getElementById('scan-bar-spinner').classList.remove('active');
