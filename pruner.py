@@ -172,6 +172,7 @@ class DupeEntry:
     format_tier:   int  = 0
     exists_on_disk:bool = True
     in_db:         bool = False
+    tag_completeness: int = 0
 
     @property
     def quality_score(self) -> tuple:
@@ -180,6 +181,7 @@ class DupeEntry:
             self.format_tier,
             self.file_size_mb,
             RARP_SCORE.get(self.rank, 0),
+            self.tag_completeness,  # higher = more complete tags
         )
 
 
@@ -202,6 +204,56 @@ class DupeGroup:
         if self.keep_in_trash:
             return []
         return [e for e in self.entries if e.action == "REVIEW_REMOVE"]
+
+
+# ── Tag completeness helper ───────────────────────────────────────────────────
+
+def _count_tags(path: Path) -> int:
+    """
+    Count how many meaningful tags the file has.
+    Used to prefer well-tagged copies during deduplication.
+    Checks: title, artist, album, BPM, key, year, genre.
+    Returns 0–7.
+    """
+    if not path.exists():
+        return 0
+    try:
+        from mutagen import File as MutagenFile
+        audio = MutagenFile(str(path), easy=False)
+        if audio is None or audio.tags is None:
+            return 0
+        tags = audio.tags
+        tag_type = type(tags).__name__
+        is_vorbis = "VCFLACDict" in tag_type or "VComment" in tag_type
+        is_mp4    = "MP4Tags" in tag_type or "MP4" in tag_type
+        score = 0
+        def _has(id3_key, vorbis_key, mp4_key=None):
+            nonlocal score
+            try:
+                if is_vorbis:
+                    v = tags.get(vorbis_key.lower())
+                    if v and str(v[0] if isinstance(v, list) else v).strip():
+                        score += 1
+                elif is_mp4 and mp4_key:
+                    v = tags.get(mp4_key)
+                    if v and str(v[0] if isinstance(v, list) else v).strip():
+                        score += 1
+                else:
+                    f = tags.get(id3_key)
+                    if f and str(f).strip():
+                        score += 1
+            except Exception:
+                pass
+        _has("TIT2", "title",       "©nam")
+        _has("TPE1", "artist",      "©ART")
+        _has("TALB", "album",       "©alb")
+        _has("TBPM", "bpm",         "tmpo")
+        _has("TKEY", "initialkey",  "----:com.apple.iTunes:initialkey")
+        _has("TDRC", "date",        "©day")
+        _has("TCON", "genre",       "©gen")
+        return score
+    except Exception:
+        return 0
 
 
 # ── Public: load report ───────────────────────────────────────────────────────
@@ -249,6 +301,8 @@ def load_report(csv_path: Path, db=None) -> list[DupeGroup]:
             entry.format_tier    = FORMAT_TIER.get(entry.format_ext, 0)
             entry.exists_on_disk = p.exists()
             entry.in_db          = fp in db_paths
+            # Compute tag completeness score from live file tags
+            entry.tag_completeness = _count_tags(p)
 
             gid = entry.group_id
             if gid not in groups:

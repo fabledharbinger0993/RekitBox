@@ -138,6 +138,7 @@
             in your database).</p>
           <p>Files that already have a BPM or key tag are <strong>skipped by default</strong>. Use <em>Force Overwrite</em>
             only if you want to replace existing values.</p>
+          <p>Optional <strong>MusicBrainz enrichment</strong> fingerprints each track via AcoustID and fills in missing title, artist, and album tags from the MusicBrainz database. Requires an AcoustID API key in settings.</p>
         </div>
       </details>
       <details>
@@ -182,6 +183,16 @@
           <label class="checkbox-label">
             <input type="checkbox" id="process-force"> Force overwrite existing tags
           </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Metadata Enrichment <span class="field-badge caution">Requires AcoustID API key</span></label>
+        <div class="enrichment-option-row">
+          <label class="checkbox-label enrichment-checkbox-label">
+            <input type="checkbox" id="process-enrich-tags">
+            <span>Look up title, artist &amp; album from MusicBrainz after tagging</span>
+          </label>
+          <p class="field-hint">Fingerprints each track and queries the AcoustID web service (~1 req/s). Only fills in <em>missing</em> fields unless Force Overwrite is on. Requires <code>acoustid_api_key</code> in your RekitBox config.</p>
         </div>
       </div>
       <div class="btn-row">
@@ -245,6 +256,49 @@
             <option value="6">6 workers (fast)</option>
             <option value="8">8 workers (max — all cores)</option>
           </select>
+        </div>
+        <div class="field">
+          <label>Match Mode <span class="field-badge safe">Controls detection thoroughness</span></label>
+          <div class="match-mode-grid">
+            <label class="match-mode-card" title="Exact fingerprint string equality. Fastest — good for obvious duplicates.">
+              <input type="radio" name="dupes-match-mode" value="exact" id="match-exact" checked>
+              <span class="match-mode-label">
+                <strong>Exact</strong>
+                <span class="match-mode-desc">Identical fingerprints only. Fastest.</span>
+              </span>
+            </label>
+            <label class="match-mode-card" title="Hamming-distance comparison on raw fingerprint integers. Catches same track encoded differently (Beatport vs Bandcamp, different bitrate/codec).">
+              <input type="radio" name="dupes-match-mode" value="fuzzy" id="match-fuzzy">
+              <span class="match-mode-label">
+                <strong>Fuzzy</strong>
+                <span class="match-mode-desc">Similar fingerprints. Catches re-encodes.</span>
+              </span>
+            </label>
+            <label class="match-mode-card" title="Groups files with matching title+artist tags and similar duration before fingerprinting. Catches duplicates tagged differently.">
+              <input type="radio" name="dupes-match-mode" value="tags" id="match-tags">
+              <span class="match-mode-label">
+                <strong>Tags</strong>
+                <span class="match-mode-desc">Title + artist matching. Broadens search.</span>
+              </span>
+            </label>
+            <label class="match-mode-card" title="Tags pre-matching + fuzzy fingerprinting. Most thorough — catches nearly everything. Slowest.">
+              <input type="radio" name="dupes-match-mode" value="all" id="match-all">
+              <span class="match-mode-label">
+                <strong>All</strong>
+                <span class="match-mode-desc">Tags + fuzzy. Most thorough, slowest.</span>
+              </span>
+            </label>
+          </div>
+          <!-- Fuzzy threshold slider — shown when fuzzy or all is selected -->
+          <div class="fuzzy-threshold-row" id="fuzzy-threshold-row" style="display:none">
+            <label class="fuzzy-threshold-label" for="fuzzy-threshold">
+              Similarity threshold: <strong id="fuzzy-threshold-val">85%</strong>
+            </label>
+            <input type="range" id="fuzzy-threshold" min="70" max="98" value="85" step="1"
+                   class="fuzzy-threshold-slider"
+                   oninput="document.getElementById('fuzzy-threshold-val').textContent = this.value + '%'">
+            <p class="field-hint">Lower = more matches found, more false positives. 85% is recommended.</p>
+          </div>
         </div>
         <div class="btn-row">
           <button class="btn btn-neon" onclick="runDuplicates()">Scan for Duplicates</button>

@@ -2619,3 +2619,116 @@ body.has-drag .drop-wrap:not(.drop-active)::after {
 
 /* Shrink main content area to not hide under the rail */
 body { padding-right: var(--db-rail-w); }
+
+/* ── Match mode card grid (Duplicate Tracks) ─────────────────────────────── */
+.match-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+@media (max-width: 700px) {
+  .match-mode-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.match-mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--surface-hi);
+}
+.match-mode-card:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 120,80,255),.08);
+}
+.match-mode-card input[type="radio"] { display: none; }
+.match-mode-card:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 120,80,255),.15);
+}
+.match-mode-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: .82rem;
+  line-height: 1.3;
+}
+.match-mode-label strong {
+  font-size: .85rem;
+  color: var(--text);
+}
+.match-mode-desc {
+  color: var(--text-dim);
+  font-size: .75rem;
+}
+
+/* ── Fuzzy threshold slider ───────────────────────────────────────────────── */
+.fuzzy-threshold-row {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+}
+.fuzzy-threshold-label {
+  display: block;
+  font-size: .82rem;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.fuzzy-threshold-label strong {
+  color: var(--text);
+}
+.fuzzy-threshold-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Enrichment option row (Tag Tracks) ──────────────────────────────────── */
+.enrichment-option-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.enrichment-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+/* ── Field badge (inline label tag) ─────────────────────────────────────── */
+.field-badge {
+  display: inline-block;
+  font-size: .68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: .04em;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.field-badge.caution {
+  background: rgba(var(--caution-rgb, 255,170,0),.15);
+  color: var(--caution, #ffa500);
+  border: 1px solid rgba(var(--caution-rgb, 255,170,0),.3);
+}
+.field-badge.safe {
+  background: rgba(var(--safe-rgb, 0,200,100),.12);
+  color: var(--safe, #00c864);
+  border: 1px solid rgba(var(--safe-rgb, 0,200,100),.25);
+}
+
+/* ── Field hint text ──────────────────────────────────────────────────────── */
+.field-hint {
+  font-size: .75rem;
+  color: var(--text-dim);
+  margin: 4px 0 0;
+  line-height: 1.5;
+}

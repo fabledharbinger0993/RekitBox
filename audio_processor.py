@@ -83,6 +83,8 @@ class ProcessResult:
     skipped_bpm: bool = False
     skipped_key: bool = False
     skipped_loudness: bool = False
+    enrich_written: bool = False
+    mb_recording_id: str | None = None
     errors: list[str] = field(default_factory=list)
     quarantined: bool = False        # True if file was moved to the quarantine folder
     quarantine_dest: Path | None = None  # Where it was moved to
@@ -412,6 +414,136 @@ def _convert_file(path: Path, target_format: str) -> tuple[bool, str]:
             tmp_path.unlink()
 
 
+# ─── AcoustID enrichment ──────────────────────────────────────────────────────
+
+def _enrich_from_acoustid(path: Path, *, force: bool = False) -> dict | None:
+    """
+    Fingerprint path with fpcalc (via pyacoustid) and query the AcoustID
+    web service. Returns a dict with available metadata fields on success,
+    or None if the API key is not configured, lookup fails, or score is low.
+
+    Returned dict keys (all optional — only present when non-empty):
+      recording_id, title, artist, album, year, genre
+
+    Note: when enrich_tags=True is passed to process_directory(), expect
+    ~1s additional time per file due to AcoustID rate limits (3 req/s).
+    """
+    try:
+        from config import ACOUSTID_API_KEY   # noqa: PLC0415
+    except ImportError:
+        return None
+    if not ACOUSTID_API_KEY:
+        return None
+
+    try:
+        import acoustid  # noqa: PLC0415
+        duration, fingerprint = acoustid.fingerprint_file(str(path))
+        if not fingerprint:
+            return None
+        if isinstance(fingerprint, bytes):
+            fingerprint = fingerprint.decode("utf-8", errors="replace")
+    except Exception as e:
+        log.debug("AcoustID fingerprint failed for %s: %s", path.name, e)
+        return None
+
+    try:
+        import acoustid  # noqa: PLC0415
+        response = acoustid.lookup(
+            ACOUSTID_API_KEY, fingerprint, duration,
+            meta=["recordings", "releasegroups", "compress"],
+        )
+        best_score = 0.0
+        best_meta: dict = {}
+        for score, rid, title, artist in acoustid.parse_lookup_result(response):
+            if score > best_score:
+                best_score = score
+                best_meta = {
+                    "recording_id": rid or "",
+                    "title":        title or "",
+                    "artist":       artist or "",
+                }
+        if best_score < 0.60 or not best_meta:
+            log.debug("AcoustID: no confident match for %s (best=%.2f)", path.name, best_score)
+            return None
+        log.info("AcoustID match: %s → %s - %s (score=%.2f)",
+                 path.name, best_meta.get("artist", "?"), best_meta.get("title", "?"), best_score)
+        return best_meta
+    except Exception as e:
+        log.warning("AcoustID lookup failed for %s: %s", path.name, e)
+        return None
+
+
+def _write_enriched_tags(path: Path, meta: dict, *, force: bool = False) -> list[str]:
+    """
+    Write MusicBrainz metadata into file tags.
+    Only writes fields that are:
+      a) present and non-empty in meta, AND
+      b) currently empty in the file (or force=True).
+    Returns list of field names written.
+    """
+    from mutagen import File as MutagenFile  # noqa: PLC0415
+    from mutagen.id3 import TIT2, TPE1, TALB  # noqa: PLC0415
+
+    audio = MutagenFile(str(path), easy=False)
+    if audio is None:
+        return []
+    if audio.tags is None:
+        try:
+            audio.add_tags()
+        except Exception:
+            return []
+
+    tag_type = type(audio.tags).__name__
+    is_vorbis = "VCFLACDict" in tag_type or "VComment" in tag_type
+    is_mp4    = "MP4Tags" in tag_type or "MP4" in tag_type
+
+    written = []
+
+    def _field_empty(id3_key, vorbis_key, mp4_key=None) -> bool:
+        try:
+            if is_vorbis:
+                v = audio.tags.get(vorbis_key.lower())
+                return not (v and str(v[0] if isinstance(v, list) else v).strip())
+            elif is_mp4 and mp4_key:
+                v = audio.tags.get(mp4_key)
+                return not (v and str(v[0] if isinstance(v, list) else v).strip())
+            else:
+                f = audio.tags.get(id3_key)
+                return f is None or not str(f).strip()
+        except Exception:
+            return True
+
+    def _write_field(label, value, id3_cls, id3_key, vorbis_key, mp4_key=None):
+        if not value:
+            return
+        if not force and not _field_empty(id3_key, vorbis_key, mp4_key):
+            return
+        try:
+            if is_vorbis:
+                audio.tags[vorbis_key.lower()] = [value]
+            elif is_mp4 and mp4_key:
+                audio.tags[mp4_key] = [value]
+            else:
+                audio.tags.delall(id3_key)
+                audio.tags[id3_key] = id3_cls(encoding=3, text=[value])
+            written.append(label)
+        except Exception as e:
+            log.debug("Could not write %s tag to %s: %s", label, path.name, e)
+
+    _write_field("title",  meta.get("title"),  TIT2, "TIT2", "title", "©nam")
+    _write_field("artist", meta.get("artist"), TPE1, "TPE1", "artist", "©ART")
+    _write_field("album",  meta.get("album"),  TALB, "TALB", "album", "©alb")
+
+    if written:
+        try:
+            audio.save()
+        except Exception as e:
+            log.warning("Could not save enriched tags for %s: %s", path.name, e)
+            return []
+
+    return written
+
+
 # ─── Tag writing ──────────────────────────────────────────────────────────────
 
 def _write_tags(path: Path, bpm: float | None, key: str | None) -> None:
@@ -455,6 +587,7 @@ def process_file(
     detect_key: bool = True,
     normalise: bool = True,
     force: bool = False,
+    enrich_tags: bool = False,
 ) -> ProcessResult:
     """Run the full analysis + normalisation pipeline on a single file."""
     result = ProcessResult(path=path)
@@ -545,6 +678,16 @@ def process_file(
             else:
                 result.errors.append("normalisation failed")
 
+    # ── MusicBrainz enrichment ──
+    if enrich_tags:
+        meta = _enrich_from_acoustid(path, force=force)
+        if meta:
+            written_fields = _write_enriched_tags(path, meta, force=force)
+            if written_fields:
+                result.enrich_written = True
+                result.mb_recording_id = meta.get("recording_id")
+                log.info("Enriched %s: wrote %s", path.name, ", ".join(written_fields))
+
     return result
 
 
@@ -557,6 +700,7 @@ def process_directory(
     detect_key: bool = True,
     normalise: bool = True,
     force: bool = False,
+    enrich_tags: bool = False,
     max_workers: int = 1,
     pause_seconds: float = 0.0,
     quarantine_dir: Path | None = None,
@@ -609,6 +753,7 @@ def process_directory(
     tags_written = 0
     bpm_key_written = 0
     quarantined = 0
+    enriched = 0
 
     def _emit_progress() -> None:
         print(
@@ -622,17 +767,20 @@ def process_directory(
                 "tags_written":  tags_written,
                 "bpm_key_written": bpm_key_written,
                 "quarantined":   quarantined,
+                "enriched":      enriched,
             }),
             flush=True,
         )
 
     def _tally(r: ProcessResult) -> None:
-        nonlocal done, clean, errors, edited, tags_written, bpm_key_written, quarantined
+        nonlocal done, clean, errors, edited, tags_written, bpm_key_written, quarantined, enriched
         done += 1
         if r.errors:
             errors += 1
         if r.quarantined:
             quarantined += 1
+        if r.enrich_written:
+            enriched += 1
         any_edit = r.bpm_written or r.key_written or r.normalised
         if any_edit:
             edited += 1
@@ -682,6 +830,7 @@ def process_directory(
             detect_key=detect_key,
             normalise=normalise,
             force=force,
+            enrich_tags=enrich_tags,
         )
         if r.errors:
             log.info("[%d/%d] %s  ✗ errors: %s",

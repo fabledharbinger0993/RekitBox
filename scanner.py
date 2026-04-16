@@ -88,6 +88,19 @@ def _get_id3_text(tags, frame_id: str) -> str | None:
     return val if val else None
 
 
+def _get_mp4_text(tags, key: str) -> str | None:
+    """
+    Pull a text value from MP4/M4A atom tags.
+    MP4 atom values are typically lists; we take the first element.
+    """
+    val = tags.get(key)
+    if val:
+        if isinstance(val, list) and val:
+            return str(val[0]).strip() or None
+        return str(val).strip() or None
+    return None
+
+
 def _get_vorbis_text(tags, *keys: str) -> str | None:
     """
     Pull a text value from Vorbis comment tags (FLAC, OGG, Opus).
@@ -184,13 +197,44 @@ def extract_metadata(path: Path) -> TrackInfo:
         info.errors.append("no tags found")
         return info
 
-    # Detect tag format by type name — Vorbis comments have a different
-    # key/value structure than ID3 frames.
+    # Detect tag format by type name — Vorbis comments and MP4 atoms have a
+    # different key/value structure than ID3 frames.
     tag_type = type(tags).__name__
     is_vorbis = "VCFLACDict" in tag_type or "VComment" in tag_type or "OggVorbis" in tag_type
+    is_mp4    = "MP4Tags" in tag_type or "MP4" in tag_type
 
     try:
-        if is_vorbis:
+        if is_mp4:
+            info.title  = _get_mp4_text(tags, "©nam")
+            info.artist = _get_mp4_text(tags, "©ART")
+            info.album  = _get_mp4_text(tags, "©alb")
+            info.genre  = _get_mp4_text(tags, "©gen")
+            info.year   = _parse_year(_get_mp4_text(tags, "©day"))
+            # Track number in M4A is stored as (track, total) tuple
+            trkn = tags.get("trkn")
+            if trkn:
+                try:
+                    info.track_number = int(trkn[0][0])
+                except (TypeError, IndexError, ValueError):
+                    pass
+            # BPM stored as integer list in tmpo atom
+            tmpo = tags.get("tmpo")
+            if tmpo:
+                try:
+                    bpm_val = float(tmpo[0])
+                    if BPM_MIN <= bpm_val <= BPM_MAX:
+                        info.bpm = bpm_val
+                except (TypeError, ValueError, IndexError):
+                    pass
+            # Key may be in a custom iTunes freeform atom
+            key_atom = tags.get("----:com.apple.iTunes:initialkey")
+            if key_atom:
+                try:
+                    raw = key_atom[0]
+                    info.key = (raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)).strip() or None
+                except Exception:
+                    pass
+        elif is_vorbis:
             info.title  = _get_vorbis_text(tags, "title")
             info.artist = _get_vorbis_text(tags, "artist")
             info.album  = _get_vorbis_text(tags, "album")

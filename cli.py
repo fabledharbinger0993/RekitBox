@@ -355,7 +355,7 @@ def cmd_duplicates(args: argparse.Namespace) -> None:
 
     workers = max(1, args.workers)
     root_label = ", ".join(str(r) for r in roots)
-    log.info("Scanning for duplicates under: %s (workers=%d)", root_label, workers)
+    log.info("Scanning for duplicates under: %s (workers=%d, match=%s)", root_label, workers, args.match_mode)
     log.info("This may take a while for large libraries — progress logged every %d files", 100)
     if len(roots) > 1:
         log.info(
@@ -363,7 +363,12 @@ def cmd_duplicates(args: argparse.Namespace) -> None:
         )
 
     try:
-        result = scan_duplicates(root, max_workers=workers)
+        result = scan_duplicates(
+            root,
+            max_workers=workers,
+            match_mode=args.match_mode,
+            fuzzy_threshold=args.fuzzy_threshold,
+        )
     except Exception:
         log.exception("Duplicate scan failed")
         sys.exit(1)
@@ -481,6 +486,7 @@ def cmd_process(args: argparse.Namespace) -> None:
                 force=args.force,
                 max_workers=max(1, args.workers),
                 quarantine_dir=_quarantine_dir,
+                enrich_tags=args.enrich_tags,
             )
             all_results.extend(results)
             root_total = len(results)
@@ -549,6 +555,9 @@ def cmd_process(args: argparse.Namespace) -> None:
             f"  BPM written: {bpm_written} files.{f'  {skipped_bpm} already had one.' if skipped_bpm else ''}",
             f"  Key written: {key_written} files.{f'  {skipped_key} already had one.' if skipped_key else ''}",
         ]
+        enrich_written = sum(1 for r in all_results if getattr(r, 'enrich_written', False))
+        if args.enrich_tags and enrich_written:
+            report_lines.append(f"  MusicBrainz enriched: {enrich_written} files.")
         if errored:
             report_lines.append(f"\n{errored} files had errors — check the log above.")
 
@@ -1054,6 +1063,28 @@ Examples:
         default=1,
         help="Number of parallel fpcalc workers (default: 1)",
     )
+    p_dupes.add_argument(
+        "--match-mode", "-m",
+        metavar="MODE",
+        choices=["exact", "fuzzy", "tags", "all"],
+        default="exact",
+        dest="match_mode",
+        help=(
+            "Matching strategy: "
+            "exact=fingerprint string equality (default, fastest), "
+            "fuzzy=Hamming-distance fingerprint comparison (catches different encodings), "
+            "tags=title+artist+duration pre-matching, "
+            "all=tags + fuzzy (most thorough, slowest)"
+        ),
+    )
+    p_dupes.add_argument(
+        "--fuzzy-threshold",
+        metavar="F",
+        type=float,
+        default=0.85,
+        dest="fuzzy_threshold",
+        help="Similarity threshold for fuzzy fingerprint matching (0.0–1.0, default: 0.85)",
+    )
     p_dupes.set_defaults(func=cmd_duplicates)
 
     # ── process ──
@@ -1103,6 +1134,12 @@ Examples:
         action="append",
         dest="also_scan",
         help="Additional directory to process (repeatable)",
+    )
+    p_process.add_argument(
+        "--enrich-tags",
+        action="store_true",
+        dest="enrich_tags",
+        help="Enrich metadata from AcoustID/MusicBrainz after BPM/key detection (requires ACOUSTID_API_KEY in config)",
     )
     p_process.set_defaults(func=cmd_process)
 

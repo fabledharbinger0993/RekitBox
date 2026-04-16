@@ -1067,6 +1067,7 @@ function runProcess() {
   if (document.getElementById('process-no-bpm').checked)  p.set('no_bpm', '1');
   if (document.getElementById('process-no-key').checked)  p.set('no_key', '1');
   if (document.getElementById('process-force').checked)   p.set('force',  '1');
+  if (document.getElementById('process-enrich-tags')?.checked) p.set('enrich_tags', '1');
   p.set('no_normalize', '1');
   const el = document.getElementById('process-result');
   if (el) el.classList.add('hidden');
@@ -1136,6 +1137,14 @@ function runDuplicates() {
   paths.forEach(path => p.append('path', path));
   const workers = document.getElementById('dupes-workers')?.value || '4';
   if (parseInt(workers) > 1) p.set('workers', workers);
+  // Match mode
+  const matchMode = document.querySelector('input[name="dupes-match-mode"]:checked')?.value || 'exact';
+  if (matchMode !== 'exact') p.set('match_mode', matchMode);
+  // Fuzzy threshold (only relevant when fuzzy or all)
+  if (matchMode === 'fuzzy' || matchMode === 'all') {
+    const thresholdPct = parseInt(document.getElementById('fuzzy-threshold')?.value || '85');
+    p.set('fuzzy_threshold', (thresholdPct / 100).toFixed(2));
+  }
   const title = 'Find Duplicates — Acoustic Fingerprinting';
   runCommand(`/api/run/duplicates?${p}`, title, (exitCode) => {
     if (exitCode === 0) {
@@ -1148,6 +1157,18 @@ function runDuplicates() {
     }
   }, true, true);
 }
+
+// Show/hide fuzzy threshold row based on match mode selection
+function _initMatchModeUI() {
+  const radios = document.querySelectorAll('input[name="dupes-match-mode"]');
+  const row = document.getElementById('fuzzy-threshold-row');
+  if (!row) return;
+  radios.forEach(r => r.addEventListener('change', () => {
+    const val = document.querySelector('input[name="dupes-match-mode"]:checked')?.value;
+    row.style.display = (val === 'fuzzy' || val === 'all') ? 'block' : 'none';
+  }));
+}
+document.addEventListener('DOMContentLoaded', _initMatchModeUI);
 
 function runConvert() {
   const paths = getFolderPaths('convert-pills');

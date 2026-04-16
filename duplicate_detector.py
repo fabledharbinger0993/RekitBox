@@ -51,6 +51,8 @@ import difflib
 import json
 import logging
 import re
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -64,6 +66,9 @@ from config import ACOUSTID_API_KEY, AUDIO_EXTENSIONS, MUSIC_ROOT, SKIP_DIRS, SK
 log = logging.getLogger(__name__)
 
 _LOG_EVERY: int = 100
+
+# Default fuzzy fingerprint similarity threshold
+_FUZZY_THRESHOLD_DEFAULT: float = 0.85
 
 # ─── Trash detection ──────────────────────────────────────────────────────────
 
@@ -201,28 +206,195 @@ def _load_scan_index() -> dict[str, dict]:
         return {}
 
 
-def _bpm_bucket(bpm_str: str | None) -> str | None:
-    """Round BPM to nearest 3% bucket for grouping. Returns None if unparseable."""
+def _bpm_buckets(bpm_str: str | None) -> frozenset[str]:
+    """
+    Return a frozenset of two adjacent integer bucket strings for a BPM value:
+    {str(floor(bpm)), str(floor(bpm)+1)}.
+
+    This overlapping bucket scheme ensures files near bucket boundaries
+    (e.g. BPM 128.9 and 129.1) are still grouped together for comparison.
+
+    Returns frozenset() on bad/missing input.
+    """
     if not bpm_str:
-        return None
+        return frozenset()
     try:
         bpm = float(bpm_str)
         if bpm <= 0:
-            return None
-        # Bucket by rounding to nearest integer — close enough for ±3% grouping
-        return str(round(bpm))
+            return frozenset()
+        import math
+        floor_bpm = math.floor(bpm)
+        return frozenset({str(floor_bpm), str(floor_bpm + 1)})
     except (ValueError, TypeError):
+        return frozenset()
+
+
+def _bpm_bucket(bpm_str: str | None) -> str | None:
+    """
+    Deprecated alias for _bpm_buckets(). Returns the first element of the
+    bucket set, or None if the set is empty.
+
+    Preserved for backward compatibility — use _bpm_buckets() for new code.
+    """
+    buckets = _bpm_buckets(bpm_str)
+    if not buckets:
         return None
+    return next(iter(buckets))
 
 
-def _candidate_pairs(files: list[Path], index: dict[str, dict]) -> list[Path]:
+# ─── Tag-based candidate detection ───────────────────────────────────────────
+
+# Regex to strip trailing parenthetical suffixes from track titles/artists.
+# Strips things like "(Original Mix)", "(Radio Edit)", "(feat. Someone)", etc.
+_TAG_SUFFIX_RE = re.compile(r'\s*\([^)]*\)\s*$')
+
+
+def _normalize_tag(value: str) -> str:
+    """
+    Normalize a tag value for comparison:
+    - lowercase and strip whitespace
+    - collapse internal whitespace
+    - strip trailing parenthetical suffixes (original mix, radio edit, feat., etc.)
+    """
+    v = value.lower().strip()
+    # Collapse internal whitespace
+    v = re.sub(r'\s+', ' ', v)
+    # Strip trailing parenthetical suffixes repeatedly (handles nested like
+    # "Title (feat. X) (Radio Edit)")
+    prev = None
+    while prev != v:
+        prev = v
+        v = _TAG_SUFFIX_RE.sub('', v).strip()
+    return v
+
+
+def _read_title_artist(path: Path) -> tuple[str, str]:
+    """
+    Read title and artist tags from an audio file via mutagen.
+    Returns (title_normalized, artist_normalized). Empty string if unreadable.
+    Supports ID3 (MP3/AIFF), MP4/AAC (©nam/©ART), and Vorbis (FLAC/OGG).
+    """
+    try:
+        audio = MutagenFile(str(path), easy=False)
+        if audio is None or audio.tags is None:
+            return "", ""
+
+        title = ""
+        artist = ""
+
+        tags = audio.tags
+
+        # ID3 (MP3, AIFF)
+        if hasattr(tags, 'get'):
+            tit2 = tags.get("TIT2")
+            if tit2 and str(tit2).strip():
+                title = str(tit2).strip()
+            tpe1 = tags.get("TPE1")
+            if tpe1 and str(tpe1).strip():
+                artist = str(tpe1).strip()
+
+            # MP4 / AAC (mutagen stores these as list-like objects)
+            if not title:
+                nam = tags.get("\xa9nam")
+                if nam:
+                    v = nam[0] if isinstance(nam, (list, tuple)) else str(nam)
+                    title = str(v).strip()
+            if not artist:
+                art = tags.get("\xa9ART")
+                if art:
+                    v = art[0] if isinstance(art, (list, tuple)) else str(art)
+                    artist = str(v).strip()
+
+            # Vorbis (FLAC, OGG) — tags are dict-like with list values
+            if not title:
+                vt = tags.get("title")
+                if vt:
+                    v = vt[0] if isinstance(vt, (list, tuple)) else str(vt)
+                    title = str(v).strip()
+            if not artist:
+                va = tags.get("artist")
+                if va:
+                    v = va[0] if isinstance(va, (list, tuple)) else str(va)
+                    artist = str(v).strip()
+
+        return _normalize_tag(title), _normalize_tag(artist)
+    except Exception:
+        return "", ""
+
+
+def _tag_based_candidates(files: list[Path], index: dict[str, dict]) -> set[Path]:
+    """
+    Return the subset of files that have at least one tag-matching partner.
+
+    Matching criteria:
+    - Same normalized artist|title key (or just title if artist is empty)
+    - Duration within ±5 seconds (from scan index if available, else mutagen)
+
+    This is used to supplement BPM/key-based pre-filtering so that tracks
+    with missing or wrong BPM/key tags are still compared.
+    """
+    _DURATION_TAG_TOLERANCE: float = 5.0
+
+    # Build tag → list[Path] groups
+    from collections import defaultdict
+    tag_groups: dict[str, list[Path]] = defaultdict(list)
+
+    for path in files:
+        title, artist = _read_title_artist(path)
+        if not title:
+            continue  # can't match without a title
+        key = f"{artist}|{title}" if artist else title
+        tag_groups[key].append(path)
+
+    candidates: set[Path] = set()
+
+    for group_files in tag_groups.values():
+        if len(group_files) < 2:
+            continue
+        # Pairwise duration check within the tag group
+        for i, a in enumerate(group_files):
+            for b in group_files[i + 1:]:
+                # Get durations: prefer scan index, fall back to mutagen
+                dur_a = index.get(str(a), {}).get("duration_sec") if index else None
+                dur_b = index.get(str(b), {}).get("duration_sec") if index else None
+
+                if dur_a is None:
+                    try:
+                        af = MutagenFile(str(a), easy=False)
+                        dur_a = af.info.length if af and hasattr(af, 'info') else None
+                    except Exception:
+                        dur_a = None
+
+                if dur_b is None:
+                    try:
+                        bf = MutagenFile(str(b), easy=False)
+                        dur_b = bf.info.length if bf and hasattr(bf, 'info') else None
+                    except Exception:
+                        dur_b = None
+
+                if dur_a is None or dur_b is None or abs(dur_a - dur_b) <= _DURATION_TAG_TOLERANCE:
+                    candidates.add(a)
+                    candidates.add(b)
+
+    return candidates
+
+
+def _candidate_pairs(
+    files: list[Path],
+    index: dict[str, dict],
+    tag_match: bool = False,
+) -> list[Path]:
     """
     Filter files to only those that have at least one potential duplicate
     based on matching key + BPM (±3%) + duration (±3s) from the scan index.
     Files not in the index are always included (conservative — don't skip unknowns).
+
+    When tag_match=True, also includes files that share normalized title+artist
+    tags within ±5 seconds duration (supplements BPM/key pre-filter).
+
     Returns deduplicated list of candidate files to fingerprint.
     """
-    if not index:
+    if not index and not tag_match:
         return files
 
     # Group files by (key, bpm_bucket) — duration checked per-pair below
@@ -231,13 +403,17 @@ def _candidate_pairs(files: list[Path], index: dict[str, dict]) -> list[Path]:
     no_index: list[Path] = []
 
     for path in files:
-        entry = index.get(str(path))
+        entry = index.get(str(path)) if index else None
         if not entry:
             no_index.append(path)
             continue
         key = entry.get("key") or "UNKNOWN"
-        bpm_b = _bpm_bucket(entry.get("bpm")) or "UNKNOWN"
-        buckets[(key, bpm_b)].append(path)
+        # Use overlapping BPM buckets: insert file once per bucket key
+        bpm_bucket_set = _bpm_buckets(entry.get("bpm"))
+        if not bpm_bucket_set:
+            bpm_bucket_set = frozenset({"UNKNOWN"})
+        for bpm_b in bpm_bucket_set:
+            buckets[(key, bpm_b)].append(path)
 
     # Within each bucket, check duration proximity
     candidates: set[Path] = set()
@@ -247,11 +423,20 @@ def _candidate_pairs(files: list[Path], index: dict[str, dict]) -> list[Path]:
         # Pairwise duration check within the bucket
         for i, a in enumerate(group_files):
             for b in group_files[i + 1:]:
-                dur_a = index.get(str(a), {}).get("duration_sec")
-                dur_b = index.get(str(b), {}).get("duration_sec")
+                dur_a = index.get(str(a), {}).get("duration_sec") if index else None
+                dur_b = index.get(str(b), {}).get("duration_sec") if index else None
                 if dur_a is None or dur_b is None or abs(dur_a - dur_b) <= _DURATION_TOLERANCE_SEC:
                     candidates.add(a)
                     candidates.add(b)
+
+    # Tag-based candidates (union with BPM/key candidates)
+    if tag_match:
+        tag_candidates = _tag_based_candidates(files, index)
+        log.info(
+            "Tag-based pre-filter: %d additional candidate files from title+artist matching",
+            len(tag_candidates - candidates),
+        )
+        candidates |= tag_candidates
 
     result = list(candidates) + no_index
     skipped = len(files) - len(result)
@@ -392,6 +577,221 @@ def _fingerprint_with_duration(path: Path) -> tuple[float, str] | None:
         return None
 
 
+# ─── Fuzzy fingerprint matching ───────────────────────────────────────────────
+
+def _find_fpcalc() -> str | None:
+    """
+    Locate the fpcalc binary. Checks PATH first, then common Homebrew locations.
+    Returns the binary path as a string, or None if not found.
+    """
+    found = shutil.which("fpcalc")
+    if found:
+        return found
+    for fallback in ("/opt/homebrew/bin/fpcalc", "/usr/local/bin/fpcalc"):
+        if Path(fallback).exists():
+            return fallback
+    return None
+
+
+def _fingerprint_raw_integers(path: Path) -> tuple[float, list[int]] | None:
+    """
+    Run fpcalc with -raw -length 120 on path and return (duration, raw_ints).
+
+    The raw integer array is the unencoded Chromaprint fingerprint —
+    each integer encodes 32 bits of acoustic sub-band energy. Pairwise
+    Hamming distance on raw arrays gives a meaningful acoustic similarity
+    score even when the base-64 encoded string differs due to minor
+    time-alignment differences.
+
+    Returns None on any failure (fpcalc not found, file unreadable, etc.).
+    """
+    fpcalc = _find_fpcalc()
+    if not fpcalc:
+        log.warning("fpcalc not found — cannot compute raw fingerprint for fuzzy matching")
+        return None
+    try:
+        result = subprocess.run(
+            [fpcalc, "-raw", "-length", "120", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            log.debug("fpcalc -raw failed for %s: %s", path.name, result.stderr.strip())
+            return None
+
+        duration: float | None = None
+        fingerprint_ints: list[int] | None = None
+
+        for line in result.stdout.splitlines():
+            if line.startswith("DURATION="):
+                try:
+                    duration = float(line.split("=", 1)[1])
+                except ValueError:
+                    pass
+            elif line.startswith("FINGERPRINT="):
+                raw = line.split("=", 1)[1].strip()
+                if raw:
+                    try:
+                        fingerprint_ints = [int(x) for x in raw.split(",") if x.strip()]
+                    except ValueError:
+                        log.debug("Could not parse raw fingerprint integers for %s", path.name)
+                        return None
+
+        if duration is None or not fingerprint_ints:
+            log.debug("Incomplete fpcalc -raw output for %s", path.name)
+            return None
+
+        return duration, fingerprint_ints
+
+    except subprocess.TimeoutExpired:
+        log.warning("fpcalc -raw timed out for %s", path.name)
+        return None
+    except Exception as e:
+        log.warning("fpcalc -raw error for %s: %s", path.name, e)
+        return None
+
+
+def _hamming_similarity(a: list[int], b: list[int]) -> float:
+    """
+    Compute the Hamming similarity between two raw Chromaprint integer arrays.
+
+    Each integer encodes 32 bits. For each pair of integers at the same
+    position, count differing bits via XOR + popcount. Similarity is:
+        1.0 - (total_differing_bits / total_bits)
+
+    If the arrays differ in length, only the overlapping prefix is compared.
+    Returns 0.0 if either array is empty or there is no overlap.
+    """
+    length = min(len(a), len(b))
+    if length == 0:
+        return 0.0
+
+    total_bits = length * 32
+    differing_bits = 0
+    for i in range(length):
+        xor = a[i] ^ b[i]
+        # Brian Kernighan popcount
+        while xor:
+            differing_bits += 1
+            xor &= xor - 1
+
+    return 1.0 - (differing_bits / total_bits)
+
+
+def _union_find_root(parent: dict[int, int], x: int) -> int:
+    """Path-compressed union-find root lookup."""
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]  # path compression
+        x = parent[x]
+    return x
+
+
+def _union_find_merge(parent: dict[int, int], rank: dict[int, int], x: int, y: int) -> None:
+    """Union by rank."""
+    rx, ry = _union_find_root(parent, x), _union_find_root(parent, y)
+    if rx == ry:
+        return
+    if rank[rx] < rank[ry]:
+        rx, ry = ry, rx
+    parent[ry] = rx
+    if rank[rx] == rank[ry]:
+        rank[rx] += 1
+
+
+def _find_fuzzy_groups(
+    unique_files: list[Path],
+    fuzzy_threshold: float,
+) -> list[DuplicateGroup]:
+    """
+    For files that had no exact fingerprint match, compute raw integer
+    fingerprints and perform pairwise Hamming-distance comparison.
+
+    Files with similarity >= fuzzy_threshold are merged via union-find into
+    DuplicateGroup entries. The fingerprint field is set to
+    "FUZZY:{root_path}" to distinguish from exact matches.
+
+    Returns list of new DuplicateGroup entries (only groups with 2+ files).
+    """
+    if not unique_files:
+        return []
+
+    log.info(
+        "Fuzzy matching: computing raw fingerprints for %d unique files...",
+        len(unique_files),
+    )
+
+    # Compute raw integer fingerprints
+    raw_fps: dict[int, list[int]] = {}  # index → raw int list
+    for idx, path in enumerate(unique_files):
+        result = _fingerprint_raw_integers(path)
+        if result is not None:
+            raw_fps[idx] = result[1]
+
+    if len(raw_fps) < 2:
+        log.info("Fuzzy matching: fewer than 2 raw fingerprints computed — skipping")
+        return []
+
+    log.info(
+        "Fuzzy matching: comparing %d raw fingerprints pairwise...",
+        len(raw_fps),
+    )
+
+    # Union-find setup
+    indices = list(raw_fps.keys())
+    parent = {i: i for i in indices}
+    rank_uf = {i: 0 for i in indices}
+
+    comparisons = 0
+    merges = 0
+    idx_list = sorted(raw_fps.keys())
+    for i_pos, i in enumerate(idx_list):
+        for j in idx_list[i_pos + 1:]:
+            sim = _hamming_similarity(raw_fps[i], raw_fps[j])
+            comparisons += 1
+            if sim >= fuzzy_threshold:
+                _union_find_merge(parent, rank_uf, i, j)
+                merges += 1
+
+    log.info(
+        "Fuzzy matching: %d comparisons, %d pairs merged (threshold=%.2f)",
+        comparisons, merges, fuzzy_threshold,
+    )
+
+    # Collect groups from union-find
+    from collections import defaultdict
+    groups_by_root: dict[int, list[int]] = defaultdict(list)
+    for i in idx_list:
+        root = _union_find_root(parent, i)
+        groups_by_root[root].append(i)
+
+    result_groups: list[DuplicateGroup] = []
+    for root_idx, members in groups_by_root.items():
+        if len(members) < 2:
+            continue
+
+        paths = [unique_files[i] for i in members]
+        ranked = sorted(paths, key=_rank_file)
+        keep = ranked[0]
+        remove = ranked[1:]
+        ranks = {str(p): _RANK_LABELS[_rank_file(p)] for p in paths}
+
+        result_groups.append(DuplicateGroup(
+            fingerprint=f"FUZZY:{unique_files[root_idx]}",
+            files=paths,
+            recommended_keep=keep,
+            recommended_remove=remove,
+            ranks=ranks,
+            keep_in_trash=_is_trash_adjacent(keep),
+        ))
+
+    log.info(
+        "Fuzzy matching: found %d additional duplicate groups",
+        len(result_groups),
+    )
+    return result_groups
+
+
 def _acoustid_lookup(
     api_key: str,
     fingerprint: str,
@@ -453,6 +853,8 @@ def scan_duplicates(
     *,
     max_workers: int = 1,
     pause_seconds: float = 0.0,
+    match_mode: str = "exact",
+    fuzzy_threshold: float = _FUZZY_THRESHOLD_DEFAULT,
 ) -> ScanResult:
     """
     Fingerprint all audio files under root (or multiple roots) and return
@@ -474,12 +876,24 @@ def scan_duplicates(
         on machines with limited cores or when DJing simultaneously.
     pause_seconds : float
         Seconds to sleep between files in sequential mode. Default 0.0.
+    match_mode : str
+        Controls which matching strategies are applied:
+          "exact"  — Chromaprint exact fingerprint match only (default).
+          "fuzzy"  — Exact match first, then fuzzy Hamming-distance matching
+                     on files with unique fingerprints.
+          "tags"   — Exact match plus tag-based (title+artist) pre-filtering.
+          "all"    — All strategies: exact + fuzzy + tag-based.
+    fuzzy_threshold : float
+        Minimum Hamming similarity (0–1) to consider two files acoustically
+        equivalent in fuzzy mode. Default 0.85. Only used when match_mode is
+        "fuzzy" or "all".
 
     Returns
     -------
-    list[DuplicateGroup]
-        Only groups with 2+ files are returned. Unique files are not included.
-        Groups are sorted by size descending (largest first).
+    ScanResult
+        groups: Only groups with 2+ files are returned. Unique files not included.
+                Groups are sorted by size descending (largest first).
+        unique_in_trash: Files with no duplicate that live inside trash folders.
     """
     roots = [root] if isinstance(root, Path) else list(root)
     for r in roots:
@@ -496,8 +910,10 @@ def scan_duplicates(
 
     # Apply pre-filter from scan index if available
     index = _load_scan_index()
-    if index:
-        files = _candidate_pairs(all_files, index)
+    tag_match = match_mode in ("tags", "all")
+
+    if index or tag_match:
+        files = _candidate_pairs(all_files, index, tag_match=tag_match)
         print(
             f"REKITBOX_PREFILTER: "
             + json.dumps({
@@ -511,11 +927,14 @@ def scan_duplicates(
         files = all_files
         log.info("No scan index found — fingerprinting all files (run Tag Tracks first to speed this up)")
 
+    # Emit the match mode for the frontend SSE stream
+    print(f"REKITBOX_MATCH_MODE: {match_mode}", flush=True)
+
     total = len(files)
     log.info(
         "Beginning fingerprint pass on %d files "
-        "(workers=%d pause=%.1fs)",
-        total, max_workers, pause_seconds,
+        "(workers=%d pause=%.1fs match_mode=%s)",
+        total, max_workers, pause_seconds, match_mode,
     )
 
     fp_map: dict[str, list[Path]] = {}
@@ -574,12 +993,16 @@ def scan_duplicates(
 
     groups: list[DuplicateGroup] = []
     unique_in_trash: list[Path] = []
+    # Track files that have NO exact duplicate (for fuzzy pass)
+    unique_fingerprint_files: list[Path] = []
 
     for fp, paths in fp_map.items():
         if len(paths) < 2:
             # Single copy — if it's in trash, this is a rescue candidate
             if _is_trash_adjacent(paths[0]):
                 unique_in_trash.append(paths[0])
+            else:
+                unique_fingerprint_files.append(paths[0])
             continue
 
         ranked = sorted(paths, key=_rank_file)
@@ -598,16 +1021,40 @@ def scan_duplicates(
 
     groups.sort(key=lambda g: len(g.files), reverse=True)
 
+    # ── Fuzzy fingerprint pass ────────────────────────────────────────────────
+    # Only runs in "fuzzy" or "all" mode. Compares files that had unique
+    # exact fingerprints using raw integer Hamming distance.
+    if match_mode in ("fuzzy", "all") and unique_fingerprint_files:
+        log.info(
+            "Fuzzy mode: running Hamming-distance comparison on %d files "
+            "with unique exact fingerprints (threshold=%.2f)",
+            len(unique_fingerprint_files), fuzzy_threshold,
+        )
+        fuzzy_groups = _find_fuzzy_groups(unique_fingerprint_files, fuzzy_threshold)
+        if fuzzy_groups:
+            log.info(
+                "Fuzzy mode: adding %d new duplicate groups from fuzzy matching",
+                len(fuzzy_groups),
+            )
+            groups.extend(fuzzy_groups)
+            # Re-sort after adding fuzzy groups
+            groups.sort(key=lambda g: len(g.files), reverse=True)
+        else:
+            log.info("Fuzzy mode: no additional groups found")
+
     # ── AcoustID enrichment ───────────────────────────────────────────────────
     # If an API key is configured, submit each group's fingerprint to the
     # AcoustID web service to get the canonical MusicBrainz recording ID,
     # title, and artist. Rate-limited to ≤3 req/s per AcoustID ToS.
+    # Only enriches groups with non-fuzzy fingerprints (fuzzy groups lack
+    # a valid encoded fingerprint for the AcoustID API).
     if ACOUSTID_API_KEY and groups:
+        enrichable = [g for g in groups if not g.fingerprint.startswith("FUZZY:")]
         log.info(
-            "AcoustID enrichment: looking up %d groups (≤3 req/s)…", len(groups)
+            "AcoustID enrichment: looking up %d groups (≤3 req/s)…", len(enrichable)
         )
         _ACOUSTID_DELAY = 0.34  # seconds between requests (just under 3/s limit)
-        for i, group in enumerate(groups):
+        for i, group in enumerate(enrichable):
             dur = dur_map.get(group.fingerprint)
             if dur is not None:
                 rid, title, artist = _acoustid_lookup(
@@ -616,7 +1063,7 @@ def scan_duplicates(
                 group.recording_id = rid
                 group.mb_title     = title
                 group.mb_artist    = artist
-            if i < len(groups) - 1:
+            if i < len(enrichable) - 1:
                 time.sleep(_ACOUSTID_DELAY)
         log.info("AcoustID enrichment complete.")
 

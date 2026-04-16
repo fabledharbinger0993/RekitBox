@@ -382,6 +382,8 @@ def api_process():
         cmd.append("--no-normalize")
     if request.args.get("force") == "1":
         cmd.append("--force")
+    if request.args.get("enrich_tags") == "1":
+        cmd.append("--enrich-tags")
     if request.args.get("dry_run") == "1":
         cmd.append("--dry-run")
     workers = request.args.get("workers", "").strip()
@@ -748,6 +750,17 @@ def api_duplicates():
     workers = request.args.get("workers", "").strip()
     if workers and workers.isdigit() and int(workers) > 1:
         cmd += ["--workers", workers]
+    match_mode = request.args.get("match_mode", "").strip()
+    if match_mode in ("exact", "fuzzy", "tags", "all"):
+        cmd += ["--match-mode", match_mode]
+    fuzzy_threshold = request.args.get("fuzzy_threshold", "").strip()
+    if fuzzy_threshold:
+        try:
+            ft = float(fuzzy_threshold)
+            if 0.0 < ft < 1.0:
+                cmd += ["--fuzzy-threshold", f"{ft:.2f}"]
+        except ValueError:
+            pass
     pause = request.args.get("pause", "").strip()
     if pause:
         try:
