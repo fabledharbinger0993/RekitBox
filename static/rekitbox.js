@@ -365,10 +365,22 @@ async function completeSetup() {
 function applyPermissions() {
   const readOk  = localStorage.getItem('rekitbox-db-read')  === 'granted';
   const writeOk = localStorage.getItem('rekitbox-db-write') === 'granted';
-  // step-audit is hidden (runs silently on setup) — no lock needed
-  // ['step-audit'] kept in applyPermissions in case card is re-shown later
-  ['step-relocate','step-import','step-link','step-duplicates'].forEach(id =>
+  // Main cards that require write permission
+  ['step-duplicates'].forEach(id =>
     document.getElementById(id)?.classList.toggle('permission-locked', !writeOk));
+  // Rail buttons that require write permission
+  ['rail-btn-relocate','rail-btn-import','rail-btn-link'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.classList.toggle('permission-locked', !writeOk);
+    btn.disabled = !writeOk;
+  });
+  // Audit rail button requires read permission
+  const auditBtn = document.getElementById('rail-btn-audit');
+  if (auditBtn) {
+    auditBtn.classList.toggle('permission-locked', !readOk);
+    auditBtn.disabled = !readOk;
+  }
 }
 
 /* Clicking a locked card reopens the wizard at the relevant step */
@@ -378,7 +390,7 @@ document.addEventListener('click', e => {
   e.stopPropagation();
   _wReadGranted  = localStorage.getItem('rekitbox-db-read')  === 'granted';
   _wWriteGranted = localStorage.getItem('rekitbox-db-write') === 'granted';
-  const needsWrite = ['step-relocate','step-import','step-link','step-duplicates'].includes(card.id);
+  const needsWrite = ['rail-btn-relocate','rail-btn-import','rail-btn-link','step-duplicates'].includes(card.id);
   openWelcome();
   welcomeShowStep(needsWrite ? 'write' : 'read');
 }, true);
@@ -680,6 +692,8 @@ setInterval(refreshStatus, 6000);
         localStorage.setItem('rekitbox-archive-permission', 'granted');
         fetch('/api/setup-archive', { method: 'POST' }).catch(() => {});
       }
+      // Run silent audit on every launch for returning users
+      if (d.db_read === 'granted') setTimeout(runSilentAudit, 700);
     } else {
       openWelcome();
     }
@@ -3311,6 +3325,44 @@ function setupMultiDropZone(textarea) {
   }, true);
 }
 
+/* ── DB Rail panel open/close ─────────────────────────────────────────────── */
+const DB_PANEL_TITLES = {
+  audit:    'Audit Library',
+  relocate: 'Relocate — Fix Broken Paths',
+  import:   'Import Tracks',
+  link:     'Link Playlists',
+};
+let _dbPanelActive = null;
+
+function openDbPanel(tool) {
+  // Deactivate all sections + rail buttons
+  document.querySelectorAll('.db-panel-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.db-rail-btn').forEach(b => b.classList.remove('active'));
+
+  const section = document.getElementById('db-panel-' + tool);
+  const btn     = document.getElementById('rail-btn-' + tool);
+  if (!section) return;
+
+  section.classList.add('active');
+  if (btn) btn.classList.add('active');
+  document.getElementById('db-panel-title').textContent = DB_PANEL_TITLES[tool] || 'DB Tools';
+
+  document.getElementById('db-panel').classList.add('open');
+  document.getElementById('db-panel-backdrop').classList.add('open');
+  _dbPanelActive = tool;
+}
+
+function closeDbPanel() {
+  document.getElementById('db-panel').classList.remove('open');
+  document.getElementById('db-panel-backdrop').classList.remove('open');
+  document.querySelectorAll('.db-rail-btn').forEach(b => b.classList.remove('active'));
+  _dbPanelActive = null;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _dbPanelActive) closeDbPanel();
+});
+
 /* Wire all drop zones once the DOM is confirmed ready */
 document.addEventListener('DOMContentLoaded', () => {
   // Folder-pill zones (multi-path, capture-phase drag)
@@ -3335,9 +3387,9 @@ document.addEventListener('DOMContentLoaded', () => {
    Calls /api/state on load and after every successful command.
    Cards get .step-complete or .step-error CSS classes.              */
 const STATE_STEP_MAP = {
-  audit:'step-audit', process:'step-process', duplicates:'step-duplicates',
-  prune:'step-duplicates', relocate:'step-relocate', import:'step-import',
-  link:'step-link', normalize:'step-normalize', convert:'step-convert',
+  audit:'rail-btn-audit', process:'step-process', duplicates:'step-duplicates',
+  prune:'step-duplicates', relocate:'rail-btn-relocate', import:'rail-btn-import',
+  link:'rail-btn-link', normalize:'step-normalize', convert:'step-convert',
   organize:'step-organize', novelty:'step-novelty',
 };
 async function loadState(libraryRoot) {

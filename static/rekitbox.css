@@ -890,7 +890,7 @@ details[open].dupes-load-existing > summary::before { content: '▾ '; }
 .confirm-panel.open { display: flex; }
 
 /* Step 1 — bottom-right. Action button at BOTTOM-RIGHT. */
-#confirm-step1 { bottom: calc(var(--scan-bar-h) + 4px); right: 28px; }
+#confirm-step1 { bottom: calc(var(--scan-bar-h) + 4px); right: calc(64px + 28px); }
 /* Step 2 — top-left. Action button at TOP-RIGHT of panel. */
 #confirm-step2 { top: 100px; left: 28px; width: 440px; max-height: 60vh; }
 /* Step 3 — center-top. Action button at BOTTOM-LEFT of panel. */
@@ -2371,3 +2371,251 @@ body.has-drag .drop-wrap:not(.drop-active)::after {
     0 0 20px  6px rgba(120, 50, 230, 0.18);
   animation: zone-idle-pulse 1.1s ease-in-out infinite;
 }
+
+/* ══ DB Rail ══════════════════════════════════════════════════════════════ */
+:root { --db-rail-w: 64px; --db-panel-w: 400px; }
+
+#db-rail {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: var(--db-rail-w);
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 104px; /* clear header */
+  gap: 4px;
+}
+
+.db-rail-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.db-rail-label-fixed {
+  position: absolute;
+  bottom: 16px;
+  font-size: .55rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  pointer-events: none;
+  opacity: .5;
+}
+
+.db-rail-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  overflow: visible;
+}
+
+.db-rail-btn img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  opacity: .65;
+  transition: opacity .15s;
+  filter: grayscale(30%);
+}
+
+.db-rail-label {
+  font-size: .6rem;
+  letter-spacing: .05em;
+  color: var(--text-dim);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .15s, transform .15s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.db-rail-btn:hover {
+  background: var(--surface-hi);
+  border-color: var(--border-hi);
+}
+.db-rail-btn:hover img {
+  opacity: 1;
+  filter: none;
+}
+.db-rail-btn:hover .db-rail-label {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.db-rail-btn.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.db-rail-btn.active img { opacity: 1; filter: none; }
+.db-rail-btn.active .db-rail-label { opacity: 1; transform: translateY(0); color: var(--accent); }
+
+/* step-complete marker on rail button */
+.db-rail-btn.step-complete::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--safe);
+}
+
+/* ══ DB Panel ═════════════════════════════════════════════════════════════ */
+#db-panel {
+  position: fixed;
+  top: 0;
+  right: var(--db-rail-w);
+  width: var(--db-panel-w);
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 498;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(calc(var(--db-panel-w) + var(--db-rail-w)));
+  transition: transform .25s cubic-bezier(.22,.68,0,1.2);
+  overflow: hidden;
+}
+
+#db-panel.open {
+  transform: translateX(0);
+}
+
+.db-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 56px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-hi);
+}
+
+#db-panel-title {
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.db-panel-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 5px;
+  line-height: 1;
+  transition: color .15s, background .15s;
+}
+.db-panel-close:hover { color: var(--text); background: var(--border); }
+
+.db-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 18px;
+}
+
+.db-panel-section { display: none; }
+.db-panel-section.active { display: block; }
+
+.db-panel-tool-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.db-panel-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.db-panel-icon.warn { border-color: rgba(250,173,20,.3); background: rgba(250,173,20,.08); }
+.db-panel-icon img { width: 22px; height: 22px; object-fit: contain; }
+
+.db-panel-tool-title {
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.db-panel-tool-blurb {
+  font-size: .76rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
+/* dead-roots banner inside panel */
+.dead-roots-banner {
+  background: rgba(239,68,68,.08);
+  border: 1px solid rgba(239,68,68,.25);
+  border-radius: 7px;
+  padding: 10px 13px;
+  font-size: .76rem;
+  color: var(--text-muted);
+  margin-top: 10px;
+}
+.dead-roots-banner strong { color: var(--danger); display: block; margin-bottom: 4px; }
+
+/* Locked state for rail buttons */
+.db-rail-btn.permission-locked {
+  opacity: .3;
+  cursor: not-allowed;
+}
+.db-rail-btn.permission-locked:hover {
+  background: transparent;
+  border-color: transparent;
+}
+.db-rail-btn.permission-locked:hover img { opacity: .65; filter: grayscale(30%); }
+.db-rail-btn.permission-locked:hover .db-rail-label { opacity: 0; }
+
+/* Backdrop */
+#db-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 497;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s;
+}
+#db-panel-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Shrink main content area to not hide under the rail */
+body { padding-right: var(--db-rail-w); }

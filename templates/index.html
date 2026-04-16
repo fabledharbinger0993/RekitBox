@@ -88,23 +88,11 @@
 
 <!-- ══ Workflow rail ════════════════════════════════════════════════════════ -->
 <nav class="workflow-rail" id="workflow-rail">
-  <button class="step-tab" data-target="step-audit" style="display:none">
-    <span class="step-num">▣</span> Library Audit
-  </button>
   <button class="step-tab active" data-target="step-process">
     <span class="step-num">🏷</span> Tag Tracks
   </button>
   <button class="step-tab" data-target="step-duplicates">
     <span class="step-num">✂</span> Duplicates
-  </button>
-  <button class="step-tab" data-target="step-relocate">
-    <span class="step-num">📍</span> Relocate
-  </button>
-  <button class="step-tab" data-target="step-import">
-    <span class="step-num">＋</span> Import
-  </button>
-  <button class="step-tab" data-target="step-link">
-    <span class="step-num">🔗</span> Link Playlists
   </button>
   <button class="step-tab" data-target="step-normalize">
     <span class="step-num">📢</span> Normalize
@@ -126,106 +114,7 @@
   <p class="section-title">Core Pipeline — each tool feeds the next</p>
 
    <!-- ── Step 1: Audit ──────────────────────────────────────────────────── -->
-<div class="card" id="step-audit" style="--card-watermark:url('/static/icon-audit.png');display:none">
-  <div class="card-head">
-    <div class="card-icon safe"><img src="/static/icon-audit.png" alt="Audit"></div>
-    <div class="card-meta">
-      <div class="card-title">Library Audit — Database &amp; Physical Scan</div>
-      <div class="card-blurb">Read-only. No changes to files or database.</div>
-    </div>
-    <span class="risk-badge safe">Read-Only</span>
-  </div>
-
-  <div class="audit-grid">
-
-    <!-- Left: RekordBox DB scan — info + explainers -->
-    <div class="audit-card audit-card-left">
-      <div class="audit-panel-title">
-        <img src="/static/icon-audit.png" alt="" class="audit-panel-icon">
-        Rekordbox Library Scan
-      </div>
-      <p class="audit-panel-blurb">
-        Opens the database in <strong>read-only mode</strong> and inventories tracks,
-        playlists, and the file path stored for every track.
-      </p>
-
-      <div class="explainers" style="margin-top:12px;">
-        <details>
-          <summary>What does this scan capture?</summary>
-          <div class="explain-body">
-            <p>Track count, playlist tree, and every file path Rekordbox has on record.
-            Results are written to a timestamped report so you can diff library states over time.</p>
-          </div>
-        </details>
-        <details>
-          <summary>Can anything go wrong?</summary>
-          <div class="explain-body">
-            <p><strong>No.</strong> Audit only reads. If the database path is wrong it
-            fails before touching anything. Nothing is modified.</p>
-          </div>
-        </details>
-        <details>
-          <summary>What about disconnected drives?</summary>
-          <div class="explain-body">
-            <p>If a drive root referenced in Rekordbox is not mounted, it will appear in
-            the <strong>⚠ Disconnected drive</strong> banner and its paths are
-            pre-filled in the Relocate step below.</p>
-          </div>
-        </details>
-      </div>
-
-      <div id="dead-roots-banner" style="display:none; margin-top:14px; padding: 10px 14px;
-           background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3);
-           border-radius: 8px; font-size: .82rem; color: var(--text);">
-        <strong style="color:var(--danger);">⚠ Disconnected drive detected</strong>
-        <div id="dead-roots-detail" style="margin-top:5px; color:var(--text-muted); line-height:1.6;"></div>
-        <div style="margin-top:7px; font-size:.76rem; color:var(--text-dim);">
-          Pre-filled in <strong>Relocate — Fix Broken Paths</strong> below.
-        </div>
-      </div>
-    </div>
-
-    <!-- Right: Physical library scan — drop zone + pills + run -->
-    <div class="audit-card audit-card-right">
-      <div class="audit-panel-title">
-        <img src="/static/icon-audit.png" alt="" class="audit-panel-icon">
-        Physical Library Scan
-        <span class="risk-badge safe" style="margin-left:auto;">Read-Only</span>
-      </div>
-      <p class="audit-panel-blurb">
-        Drop the folders you want scanned. Each path is walked in full — only what
-        you add here is scanned, never an auto-detected root.
-      </p>
-
-      <div class="folder-zone" id="audit-zone">
-        <div class="folder-zone-hint">
-          <strong>⤵ Drop folders here</strong>
-          or type a path and press Enter
-        </div>
-        <div class="folder-zone-input-row">
-          <input type="text" class="folder-zone-text" id="audit-zone-text" placeholder="/Volumes/DRIVE/Music">
-          <button class="folder-zone-browse" type="button" onclick="pickFolderFor('audit-pills')">Browse…</button>
-          <button class="folder-zone-add" type="button" onclick="auditZoneAdd()">+ Add</button>
-        </div>
-      </div>
-      <div class="folder-pills" id="audit-pills"></div>
-
-      <div class="field" style="margin-top:10px;">
-        <div class="checkbox-row">
-          <label class="checkbox-label">
-            <input type="checkbox" id="audit-save-physical" checked>
-            Save physical scan report JSON
-          </label>
-        </div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-neon" type="button" onclick="runAudit()">Run Library Audit</button>
-      </div>
-    </div>
-
-  </div>
-</div>
+<div id="step-audit" style="display:none"></div>
 
     <!-- ── Step 2: Process (tags only) ────────────────────────────────────── -->
   <div class="card" id="step-process" style="--card-watermark:url('/static/icon-tag.png')">
@@ -482,226 +371,10 @@
   </div>
 
 
-    <!-- Relocate -->
-  <div class="card" id="step-relocate" style="--card-watermark:url('/static/icon-move.png')">
-    <div class="card-head">
-      <div class="card-icon warn"><img src="/static/icon-move.png" alt="Relocate"></div>
-      <div class="card-meta">
-        <div class="card-title">Relocate — Fix Broken File Paths</div>
-        <div class="card-blurb">When you move or rename your music folders, RekordBox loses the tracks. This updates the database to point to where the files actually are now. <strong>RekordBox must be closed.</strong></div>
-      </div>
-      <span class="risk-badge warn">Writes DB</span>
-    </div>
-
-    <div class="explainers">
-      <details>
-        <summary>How does it find files that have moved?</summary>
-        <div class="explain-body">
-          <p>For each track whose old path no longer exists, it tries three strategies in order:</p>
-          <ul>
-            <li><strong>Exact</strong> — the same relative path exists under the new root.</li>
-            <li><strong>Hash</strong> — SHA256 of the first 64 KB matches a file under the new root. Catches files that were renamed but have identical content.</li>
-            <li><strong>Fuzzy</strong> — filename similarity ≥ 90%. Catches minor edits, encoding fixes, format changes (e.g. <code>.aif</code> → <code>.aiff</code>).</li>
-          </ul>
-          <p>Tracks that can't be matched by any strategy are logged as warnings and left unchanged — they are not deleted or broken further.</p>
-          <p>The <strong>old root does not need to exist on disk</strong> — it's matched as a text prefix against the paths stored in the database. If you renamed a drive or moved everything to a new mount point, just enter what the old path was.</p>
-        </div>
-      </details>
-      <details>
-        <summary>What if I type the old root wrong?</summary>
-        <div class="explain-body">
-          <p>If the old root doesn't match any paths in the database, zero tracks will be processed and you'll see a warning in the output. Nothing will be changed. Run Audit first to confirm what paths the database actually contains.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="card-form">
-      <div class="card-grid">
-
-        <!-- Left pane: Old paths (multi-pill) -->
-        <div class="audit-card compact-drop-card">
-          <div class="audit-panel-title">
-            <img src="/static/icon-move.png" alt="" class="audit-panel-icon">
-            Old Paths — where files used to be
-          </div>
-          <p class="audit-panel-blurb">Path prefixes stored in Rekordbox that no longer exist on disk. Add one or more — each is relocated to the new root on the right.</p>
-          <div class="folder-zone" id="relocate-old-zone">
-            <div class="folder-zone-hint">
-              <strong>⤵ Drop old folder here</strong>
-              or type the path prefix and press Enter
-            </div>
-            <div class="folder-zone-input-row">
-              <input type="text" class="folder-zone-text" id="relocate-old-zone-text" placeholder="/Volumes/OLD_DRIVE/Music">
-              <button class="folder-zone-browse" type="button" onclick="pickFolderFor('relocate-old-pills')">Browse…</button>
-              <button class="folder-zone-add" type="button" onclick="relocateOldZoneAdd()">+ Add</button>
-            </div>
-          </div>
-          <div class="folder-pills" id="relocate-old-pills"></div>
-        </div>
-
-        <!-- Right pane: New path -->
-        <div class="audit-card compact-drop-card">
-          <div class="audit-panel-title">
-            <img src="/static/icon-move.png" alt="" class="audit-panel-icon">
-            New Path — where files are now
-          </div>
-          <p class="audit-panel-blurb">The new root where the files actually live. Every matching database path gets its prefix swapped to this location.</p>
-          <div class="folder-zone" id="relocate-new-zone">
-            <div class="folder-zone-hint">
-              <strong>⤵ Drop new folder here</strong>
-              or type / browse to the new root
-            </div>
-            <div class="folder-zone-input-row">
-              <input type="text" class="folder-zone-text" id="relocate-new" placeholder="/Volumes/YourDrive/Music">
-              <button class="folder-zone-browse" type="button" onclick="pickPathFor('relocate-new')">Browse…</button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-      <div class="btn-row" style="margin-top:12px">
-        <button class="btn btn-neon" id="btn-relocate" onclick="runRelocate()">Relocate Paths</button>
-      </div>
-      <div class="rb-block-msg" id="relocate-rb-block">
-        <span>⚠</span> RekordBox is open. Close it before relocating.
-      </div>
-    </div>
-  </div>
-
-
-    <!-- ── Step 3: Import (with built-in preview) ────────────────────────── -->
-  <div class="card" id="step-import" style="--card-watermark:url('/static/icon-import.png')">
-    <div class="card-head">
-      <div class="card-icon warn"><img src="/static/icon-import.png" alt="Import"></div>
-      <div class="card-meta">
-        <div class="card-title">Import — Add Tracks to RekordBox</div>
-        <div class="card-blurb">Preview one or more source folders first to see exactly what will be added, then import. <strong>RekordBox must be closed for the real import.</strong> A timestamped backup is created automatically before anything is written.</div>
-      </div>
-      <span class="risk-badge warn">Writes DB</span>
-    </div>
-
-    <div class="explainers">
-      <details>
-        <summary>What does Preview show?</summary>
-        <div class="explain-body">
-          <p>Preview walks your music folder and checks each file against what's already in the database — no writes, no changes. You'll see:</p>
-          <ul>
-            <li>How many tracks are new (will be imported)</li>
-            <li>How many are already in the DB (will be skipped)</li>
-            <li>Any files it can't read or extract metadata from</li>
-          </ul>
-          <p>Always run Preview first. If the numbers look right, hit Import.</p>
-        </div>
-      </details>
-      <details>
-        <summary>What exactly gets written to the database?</summary>
-        <div class="explain-body">
-          <p>For each new track, it creates a row in <code>DjmdContent</code> with the metadata extracted from the file's tags:</p>
-          <ul>
-            <li>Title, artist, album, genre, year, track number</li>
-            <li>BPM (stored as BPM × 100 — that's how RekordBox expects it)</li>
-            <li>Musical key (translated to RekordBox's internal key ID)</li>
-            <li>Duration, bitrate, sample rate, bit depth, file path</li>
-          </ul>
-          <p>Tracks already in the database are <strong>skipped entirely</strong> — no duplicates created, no overwriting.</p>
-          <p>The operation commits in batches of 250. If anything fails mid-batch, the entire batch rolls back automatically. You won't get half-imported tracks.</p>
-        </div>
-      </details>
-      <details>
-        <summary>What if something goes wrong?</summary>
-        <div class="explain-body">
-          <p>Before the first write, a timestamped copy of <code>master.db</code> is saved to <code>~/rekordbox-toolkit/backups/</code>. If the import fails or something looks wrong afterward, you can restore from that file.</p>
-          <p><strong>RekordBox must be closed</strong> — the server checks this before starting. If it's open, the import will be blocked here before anything is touched.</p>
-          <p>A single bad file will not abort the batch — errors are captured per-file and logged, and the rest of the import continues.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="card-form">
-      <div class="field">
-        <label>Music Folder(s)</label>
-        <div class="folder-zone" id="import-zone">
-          <div class="folder-zone-hint">
-            <strong>⤵ Drop folder here</strong>
-            or type a path and press Enter
-          </div>
-          <div class="folder-zone-input-row">
-            <input type="text" class="folder-zone-text" id="import-zone-text" placeholder="/Volumes/YourDrive/Music">
-            <button class="folder-zone-browse" type="button" onclick="pickFolderFor('import-pills')">Browse…</button>
-            <button class="folder-zone-add" type="button" onclick="importZoneAdd()">+ Add</button>
-          </div>
-        </div>
-        <div class="folder-pills" id="import-pills"></div>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="runImportDry()">Preview Import</button>
-        <button class="btn btn-neon" id="btn-import" onclick="runImport()">Import Tracks</button>
-      </div>
-      <div class="rb-block-msg" id="import-rb-block">
-        <span>⚠</span> RekordBox is open. Close it before importing.
-      </div>
-    </div>
-  </div>
-
-
-    <!-- ── Step 4: Link playlists ──────────────────────────────────────────── -->
-  <div class="card" id="step-link" style="--card-watermark:url('/static/icon-link.png')">
-    <div class="card-head">
-      <div class="card-icon warn"><img src="/static/icon-link.png" alt="Link Playlists"></div>
-      <div class="card-meta">
-        <div class="card-title">Link Playlists — Connect Tracks to Folders</div>
-        <div class="card-blurb">Matches imported tracks to RekordBox playlists based on the folders they live in. Add one or more source folders and RekitBox will link every imported track it finds there.</div>
-      </div>
-      <span class="risk-badge warn">Writes DB</span>
-    </div>
-
-    <div class="explainers">
-      <details>
-        <summary>How does the matching work?</summary>
-        <div class="explain-body">
-          <p>For each track, it walks up the folder path toward your music root and compares folder names against playlist names in the database:</p>
-          <ul>
-            <li><strong>Exact match first</strong> — folder name equals playlist name exactly.</li>
-            <li><strong>Fuzzy match second</strong> — if no exact match, it tries similarity scoring. Threshold is 85% similarity. Only applied to names 4 characters or longer (to avoid false positives on short names).</li>
-          </ul>
-          <p>If no match is found, the track is left unlinked and a warning is logged. No track is ever removed from a playlist it was already in.</p>
-        </div>
-      </details>
-      <details>
-        <summary>What if my folder names don't match my playlist names?</summary>
-        <div class="explain-body">
-          <p>Tracks that can't be matched are logged and left alone — they stay in the database, just not assigned to a playlist. You'll see the count in the output.</p>
-          <p>The fuzzy match handles common differences like trailing spaces, slight spelling variations, or accented characters. If the mismatch is large (e.g. completely different naming conventions), you may need to manually link those tracks in RekordBox.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="card-form">
-      <div class="field">
-        <label>Music Folder(s)</label>
-        <div class="folder-zone" id="link-zone">
-          <div class="folder-zone-hint">
-            <strong>⤵ Drop folder here</strong>
-            or type a path and press Enter
-          </div>
-          <div class="folder-zone-input-row">
-            <input type="text" class="folder-zone-text" id="link-zone-text" placeholder="/Volumes/YourDrive/Music">
-            <button class="folder-zone-browse" type="button" onclick="pickFolderFor('link-pills')">Browse…</button>
-            <button class="folder-zone-add" type="button" onclick="linkZoneAdd()">+ Add</button>
-          </div>
-        </div>
-        <div class="folder-pills" id="link-pills"></div>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-neon" id="btn-link" onclick="runLink()">Link Playlists</button>
-      </div>
-      <div class="rb-block-msg" id="link-rb-block">
-        <span>⚠</span> RekordBox is open. Close it before linking.
-      </div>
-    </div>
-  </div>
-
-
+  <!-- DB tool stubs — content lives in #db-panel; IDs kept for STATE_STEP_MAP -->
+  <div id="step-relocate" style="display:none"></div>
+  <div id="step-import"   style="display:none"></div>
+  <div id="step-link"     style="display:none"></div>
 
   <p class="section-title" style="margin-top:48px">Optional &amp; Transformative — run after the core pipeline is clean</p>
 
@@ -1787,5 +1460,205 @@
 </div>
 
 <script src="/static/rekitbox.js"></script>
+
+<!-- ══ DB Rail ═══════════════════════════════════════════════════════════════
+     Fixed 64px strip on the right edge — icon buttons for RekordBox DB tools.
+     Hover shows label; click opens the slide-in panel.                       -->
+<div id="db-rail">
+  <div class="db-rail-inner">
+    <button class="db-rail-btn" id="rail-btn-audit"    onclick="openDbPanel('audit')"    title="Audit Library">
+      <img src="/static/icon-audit.png"  alt="Audit">
+      <span class="db-rail-label">Audit</span>
+    </button>
+    <button class="db-rail-btn" id="rail-btn-relocate" onclick="openDbPanel('relocate')" title="Relocate Paths">
+      <img src="/static/icon-move.png"   alt="Relocate">
+      <span class="db-rail-label">Relocate</span>
+    </button>
+    <button class="db-rail-btn" id="rail-btn-import"   onclick="openDbPanel('import')"   title="Import Tracks">
+      <img src="/static/icon-import.png" alt="Import">
+      <span class="db-rail-label">Import</span>
+    </button>
+    <button class="db-rail-btn" id="rail-btn-link"     onclick="openDbPanel('link')"     title="Link Playlists">
+      <img src="/static/icon-link.png"   alt="Link">
+      <span class="db-rail-label">Link</span>
+    </button>
+  </div>
+  <div class="db-rail-label-fixed">DB Tools</div>
+</div>
+
+<!-- ══ DB Panel ══════════════════════════════════════════════════════════════
+     Slide-in 400px panel. Only the active section is visible.               -->
+<div id="db-panel">
+  <div class="db-panel-header">
+    <span id="db-panel-title">RekordBox DB Tools</span>
+    <button class="db-panel-close" onclick="closeDbPanel()" title="Close">✕</button>
+  </div>
+  <div class="db-panel-body">
+
+    <!-- ── Audit ─────────────────────────────────────────────────────────── -->
+    <div class="db-panel-section" id="db-panel-audit">
+      <div class="db-panel-tool-head">
+        <div class="db-panel-icon"><img src="/static/icon-audit.png" alt="Audit"></div>
+        <div>
+          <div class="db-panel-tool-title">Audit Library</div>
+          <div class="db-panel-tool-blurb">Read-only health check — finds orphaned, missing, and duplicate-path records in your RekordBox database.</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Music Folder(s)</label>
+        <div class="folder-zone" id="audit-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folder here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="audit-zone-text" placeholder="/Volumes/YourDrive/Music">
+            <button class="folder-zone-browse" type="button" onclick="pickFolderFor('audit-pills')">Browse…</button>
+            <button class="folder-zone-add"    type="button" onclick="auditZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="audit-pills"></div>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="audit-save-physical" style="accent-color:var(--accent)">
+          Save physical file index to disk
+        </label>
+      </div>
+      <div id="dead-roots-banner" style="display:none" class="dead-roots-banner">
+        <strong>⚠ Dead library roots detected</strong>
+        <div id="dead-roots-detail"></div>
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-neon" onclick="runAudit()">Run Audit</button>
+      </div>
+    </div>
+
+    <!-- ── Relocate ───────────────────────────────────────────────────────── -->
+    <div class="db-panel-section" id="db-panel-relocate">
+      <div class="db-panel-tool-head">
+        <div class="db-panel-icon warn"><img src="/static/icon-move.png" alt="Relocate"></div>
+        <div>
+          <div class="db-panel-tool-title">Relocate — Fix Broken Paths</div>
+          <div class="db-panel-tool-blurb">Updates the database when you move or rename your music folders. <strong>RekordBox must be closed.</strong></div>
+        </div>
+      </div>
+      <div class="card-grid" style="margin-top:10px">
+        <div class="audit-card compact-drop-card">
+          <div class="audit-panel-title">
+            <img src="/static/icon-move.png" alt="" class="audit-panel-icon">
+            Old Paths
+          </div>
+          <p class="audit-panel-blurb">Path prefixes stored in RekordBox that no longer exist on disk.</p>
+          <div class="folder-zone" id="relocate-old-zone">
+            <div class="folder-zone-hint">
+              <strong>⤵ Drop old folder</strong>
+              or type prefix and press Enter
+            </div>
+            <div class="folder-zone-input-row">
+              <input type="text" class="folder-zone-text" id="relocate-old-zone-text" placeholder="/Volumes/OLD_DRIVE/Music">
+              <button class="folder-zone-browse" type="button" onclick="pickFolderFor('relocate-old-pills')">Browse…</button>
+              <button class="folder-zone-add"    type="button" onclick="relocateOldZoneAdd()">+ Add</button>
+            </div>
+          </div>
+          <div class="folder-pills" id="relocate-old-pills"></div>
+        </div>
+        <div class="audit-card compact-drop-card">
+          <div class="audit-panel-title">
+            <img src="/static/icon-move.png" alt="" class="audit-panel-icon">
+            New Path
+          </div>
+          <p class="audit-panel-blurb">The root where the files actually live now.</p>
+          <div class="folder-zone" id="relocate-new-zone">
+            <div class="folder-zone-hint">
+              <strong>⤵ Drop new folder</strong>
+              or type / browse to the new root
+            </div>
+            <div class="folder-zone-input-row">
+              <input type="text" class="folder-zone-text" id="relocate-new" placeholder="/Volumes/YourDrive/Music">
+              <button class="folder-zone-browse" type="button" onclick="pickPathFor('relocate-new')">Browse…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-neon" id="btn-relocate" onclick="runRelocate()">Relocate Paths</button>
+      </div>
+      <div class="rb-block-msg" id="relocate-rb-block">
+        <span>⚠</span> RekordBox is open. Close it before relocating.
+      </div>
+    </div>
+
+    <!-- ── Import ─────────────────────────────────────────────────────────── -->
+    <div class="db-panel-section" id="db-panel-import">
+      <div class="db-panel-tool-head">
+        <div class="db-panel-icon warn"><img src="/static/icon-import.png" alt="Import"></div>
+        <div>
+          <div class="db-panel-tool-title">Import — Add Tracks to RekordBox</div>
+          <div class="db-panel-tool-blurb">Preview first to see what will be added, then import. <strong>RekordBox must be closed.</strong> A timestamped backup is created automatically.</div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Music Folder(s)</label>
+        <div class="folder-zone" id="import-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folder here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="import-zone-text" placeholder="/Volumes/YourDrive/Music">
+            <button class="folder-zone-browse" type="button" onclick="pickFolderFor('import-pills')">Browse…</button>
+            <button class="folder-zone-add"    type="button" onclick="importZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="import-pills"></div>
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="runImportDry()">Preview Import</button>
+        <button class="btn btn-neon" id="btn-import" onclick="runImport()">Import Tracks</button>
+      </div>
+      <div class="rb-block-msg" id="import-rb-block">
+        <span>⚠</span> RekordBox is open. Close it before importing.
+      </div>
+    </div>
+
+    <!-- ── Link Playlists ─────────────────────────────────────────────────── -->
+    <div class="db-panel-section" id="db-panel-link">
+      <div class="db-panel-tool-head">
+        <div class="db-panel-icon warn"><img src="/static/icon-link.png" alt="Link"></div>
+        <div>
+          <div class="db-panel-tool-title">Link Playlists</div>
+          <div class="db-panel-tool-blurb">Matches imported tracks to RekordBox playlists based on the folders they live in.</div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Music Folder(s)</label>
+        <div class="folder-zone" id="link-zone">
+          <div class="folder-zone-hint">
+            <strong>⤵ Drop folder here</strong>
+            or type a path and press Enter
+          </div>
+          <div class="folder-zone-input-row">
+            <input type="text" class="folder-zone-text" id="link-zone-text" placeholder="/Volumes/YourDrive/Music">
+            <button class="folder-zone-browse" type="button" onclick="pickFolderFor('link-pills')">Browse…</button>
+            <button class="folder-zone-add"    type="button" onclick="linkZoneAdd()">+ Add</button>
+          </div>
+        </div>
+        <div class="folder-pills" id="link-pills"></div>
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-neon" id="btn-link" onclick="runLink()">Link Playlists</button>
+      </div>
+      <div class="rb-block-msg" id="link-rb-block">
+        <span>⚠</span> RekordBox is open. Close it before linking.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- backdrop -->
+<div id="db-panel-backdrop" onclick="closeDbPanel()"></div>
+
 </body>
 </html>
