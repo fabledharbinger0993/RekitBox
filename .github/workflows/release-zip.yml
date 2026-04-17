@@ -1,0 +1,30 @@
+name: Attach RekitBox.zip to release
+
+# Every release needs a RekitBox.zip asset so the in-app update checker can
+# resolve https://github.com/.../releases/latest/download/RekitBox.zip. This
+# workflow builds the zip from the release tag via `git archive` and uploads
+# it automatically whenever a release is published.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Build RekitBox.zip
+        run: git archive --format=zip --prefix=RekitBox/ -o /tmp/RekitBox.zip HEAD
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" /tmp/RekitBox.zip --clobber --repo "$GITHUB_REPOSITORY"
