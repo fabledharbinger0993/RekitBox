@@ -1814,24 +1814,33 @@ def mobile_download():
     """
     Enqueue a download job.
 
-    Body: { "url": "...", "destination": "/Music/New Drops/", "filename": "optional" }
+    Body: {
+      "url":         "https://bandcamp.com/...",
+      "destination": "/Volumes/DJMT/New Drops/",
+      "format":      "aiff" | "flac" | "wav" | "mp3"  (optional, default "aiff")
+      "filename":    "Artist - Title"                  (optional, derived from tags)
+    }
     Response: { "job_id": "uuid" }
 
     The download runs asynchronously. Progress and completion are pushed to all
-    connected WebSocket clients via /api/mobile/events.
+    connected WebSocket clients via /api/mobile/events as download_update events.
+    Supported sources: Bandcamp, Beatport, Soundcloud, and any URL yt-dlp handles.
     """
     import downloader  # noqa: PLC0415
     body = request.get_json(force=True, silent=True) or {}
-    url = (body.get("url") or "").strip()
+    url         = (body.get("url")         or "").strip()
     destination = (body.get("destination") or "").strip()
-    filename = (body.get("filename") or "").strip() or None
+    filename    = (body.get("filename")    or "").strip() or None
+    fmt         = (body.get("format")      or downloader.DEFAULT_FORMAT).strip().lower()
 
     if not url:
         return jsonify({"error": "url is required"}), 400
     if not destination:
         return jsonify({"error": "destination is required"}), 400
+    if fmt not in downloader.FORMATS:
+        return jsonify({"error": f"format must be one of: {', '.join(sorted(downloader.FORMATS))}"}), 400
 
-    job_id = downloader.enqueue(url, destination, filename)
+    job_id = downloader.enqueue(url, destination, filename, fmt)
     return jsonify({"job_id": job_id}), 202
 
 
