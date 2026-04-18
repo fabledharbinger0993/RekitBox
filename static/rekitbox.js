@@ -4116,7 +4116,6 @@ function _loadConnectivity() {
       const qr      = document.getElementById('rekitgo-qr');
       const localEl = document.getElementById('rekitgo-local');
       const tsEl    = document.getElementById('rekitgo-tailscale');
-      const tokenEl = document.getElementById('rekitgo-token');
       const offline = document.getElementById('rekitgo-offline-msg');
       const qrWrap  = document.getElementById('rekitgo-qr-wrap');
 
@@ -4136,16 +4135,12 @@ function _loadConnectivity() {
         if (label) label.textContent = 'Offline — local tools still work normally';
       }
 
-      if (localEl)  localEl.textContent  = d.local_ip    ? `${d.local_ip}:5001`      : '—';
-      if (tsEl)     tsEl.textContent     = d.tailscale_ip ? `${d.tailscale_ip}:5001`  : 'not connected';
-      if (tokenEl) {
-        tokenEl.textContent = d.token ? d.token.slice(0, 8) + '••••••••••••••••••••••••••' : '—';
-        tokenEl.title = d.token || '';
-      }
+      if (localEl)  localEl.textContent  = d.local_ip    ? `http://${d.local_ip}:5001`      : '—';
+      if (tsEl)     tsEl.textContent     = d.tailscale_ip ? `http://${d.tailscale_ip}:5001`  : 'not connected';
 
-      // Pairing QR (orange) — step 4
-      if (d.qr_svg && qr) {
-        qr.innerHTML = d.qr_svg;
+      // Pairing QR (step 4) — now shows the PWA URL so iPhone can open in Safari
+      if ((d.qr_pwa_url || d.qr_svg) && qr) {
+        qr.innerHTML = d.qr_pwa_url || d.qr_svg;
         if (qrWrap) qrWrap.style.display = 'flex';
         if (offline) offline.style.display = 'none';
       } else {
@@ -4156,7 +4151,8 @@ function _loadConnectivity() {
       // Setup QRs (green) — steps 2 & 3
       _injectSetupQr('rkg-qr-ts-mac',       d.qr_tailscale_mac);
       _injectSetupQr('rkg-qr-ts-ios',       d.qr_tailscale_ios);
-      _injectSetupQr('rkg-qr-rekitgo-ios',  d.qr_rekitgo_ios);
+      // Step 3 RekitGo slot: now shows the PWA URL QR (scan → Safari → Add to Home Screen)
+      _injectSetupQr('rkg-qr-rekitgo-ios',  d.qr_pwa_url || d.qr_rekitgo_ios);
     })
     .catch(() => {
       const label = document.getElementById('rekitgo-status-label');

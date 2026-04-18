@@ -1930,6 +1930,15 @@ def api_connectivity():
             fill="#ff6600",
         )
 
+    # PWA install QR — orange, encodes the web-app URL so iPhone Safari can
+    # open it directly and the user can Add to Home Screen
+    qr_pwa_url: str | None = None
+    if best_ip:
+        qr_pwa_url = _make_styled_qr(
+            f"http://{best_ip}:5001",
+            fill="#ff6600",
+        )
+
     # Setup QRs — green (safe / informational)
     _green = "#34d399"
     qr_tailscale_mac = _make_styled_qr("https://tailscale.com/download/macos", fill=_green)
@@ -1947,6 +1956,7 @@ def api_connectivity():
         "remote_ready":      remote_ready,
         "token":             token,
         "qr_svg":            qr_svg,
+        "qr_pwa_url":        qr_pwa_url,
         "qr_tailscale_mac":  qr_tailscale_mac,
         "qr_tailscale_ios":  qr_tailscale_ios,
         "qr_rekitgo_ios":    qr_rekitgo_ios,

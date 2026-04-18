@@ -7,6 +7,13 @@
 <title>RekitBox — rekordbox-toolkit</title>
 <link rel="stylesheet" href="/static/rekitbox.css">
 <link rel="icon" type="image/png" href="/static/RB_LOGO.png">
+<!-- PWA -->
+<link rel="manifest" href="/static/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RekitGo">
+<link rel="apple-touch-icon" href="/static/icon-rekitgo.png">
+<meta name="theme-color" content="#ff6600">
 <style>
 
  
@@ -1781,12 +1788,14 @@
     <p class="rkg-section-body">
       <strong>RekitGo</strong> is the iPhone companion to RekitBox. Queue downloads, browse your library, manage playlists, and export to Pioneer drives — all from your phone.
     </p>
+    <p class="rkg-section-body">
+      It installs as a <strong>web app (PWA)</strong> — no App Store, no Xcode, no cost. Just open it in Safari and tap <em>Add to Home Screen</em>.
+    </p>
     <div class="rkg-section-title">What you need</div>
     <ul class="rkg-checklist">
-      <li><strong>Tailscale</strong> installed on this Mac — routes your iPhone through your home network remotely</li>
-      <li><strong>Tailscale</strong> on your iPhone — same account, connects automatically</li>
-      <li><strong>RekitGo</strong> app installed on your iPhone</li>
-      <li>Both devices <strong>signed in</strong> to the same Tailscale account</li>
+      <li>Your iPhone on the <strong>same Wi-Fi</strong> as this Mac — or Tailscale for remote access</li>
+      <li><strong>Safari</strong> on iPhone (required for Add to Home Screen)</li>
+      <li>Optionally: <strong>Tailscale</strong> on both devices for access from anywhere</li>
     </ul>
     <div class="rkg-notice">
       <strong>LAN only?</strong> If both devices are on the same Wi-Fi, Tailscale is optional — LAN access works out of the box. Tailscale gives you remote access from anywhere.
@@ -1811,33 +1820,37 @@
     </div>
   </div>
 
-  <!-- ── Page 3: iPhone apps ──────────────────────────────────────────────── -->
+  <!-- ── Page 3: iPhone install ─────────────────────────────────────────── -->
   <div class="rkg-page hidden" id="rkg-page-3">
     <p class="rkg-section-body">
-      Install both apps on your iPhone, then sign in to Tailscale with the <strong>same account</strong> as your Mac.
+      Scan the QR code below on your iPhone to open RekitGo in Safari, then install it to your home screen.
     </p>
     <div class="rkg-qr-pair">
       <div>
-        <div class="rkg-qr-label">Tailscale</div>
+        <div class="rkg-qr-label">Tailscale <span style="font-weight:400;opacity:.6">(optional)</span></div>
         <div id="rkg-qr-ts-ios" class="rkg-qr-box">
           <p class="rkg-qr-caption">App Store</p>
         </div>
       </div>
       <div>
-        <div class="rkg-qr-label">RekitGo</div>
+        <div class="rkg-qr-label">Open RekitGo</div>
         <div id="rkg-qr-rekitgo-ios" class="rkg-qr-box">
-          <p class="rkg-qr-caption">Install app</p>
+          <p class="rkg-qr-caption">Scan → opens in Safari</p>
         </div>
       </div>
     </div>
     <ul class="rkg-checklist">
-      <li>Install <strong>Tailscale</strong> and sign in with the same account as this Mac</li>
-      <li>Tap <strong>Connect</strong> in Tailscale — it should show this Mac as a device</li>
-      <li>Install <strong>RekitGo</strong> on your iPhone</li>
+      <li>Scan the <strong>Open RekitGo</strong> QR with your iPhone camera</li>
+      <li>It opens in <strong>Safari</strong> — tap the <strong>Share</strong> button (□↑) at the bottom</li>
+      <li>Tap <strong>Add to Home Screen</strong> → tap <strong>Add</strong></li>
+      <li>RekitGo now lives on your home screen like a native app</li>
     </ul>
+    <div class="rkg-notice">
+      <strong>Remote access?</strong> Install Tailscale on your iPhone and sign in with the same account as this Mac — then RekitGo works from anywhere, not just home Wi-Fi.
+    </div>
   </div>
 
-  <!-- ── Page 4: Pair & Connect ────────────────────────────────────────────── -->
+  <!-- ── Page 4: Connect ────────────────────────────────────────────────────── -->
   <div class="rkg-page hidden" id="rkg-page-4">
     <div id="rekitgo-status-row">
       <span id="rekitgo-status-dot"></span>
@@ -1845,25 +1858,21 @@
     </div>
     <div id="rekitgo-qr-wrap" class="rkg-qr-box">
       <div id="rekitgo-qr"></div>
-      <p class="rkg-qr-caption">Open RekitGo → tap ⊕ → scan this code</p>
+      <p class="rkg-qr-caption">Scan on iPhone → opens in Safari → Add to Home Screen</p>
     </div>
     <div id="rekitgo-detail">
       <div class="rekitgo-row">
-        <span class="rekitgo-key">Local</span>
-        <span class="rekitgo-val" id="rekitgo-local">—</span>
+        <span class="rekitgo-key">Local URL</span>
+        <span class="rekitgo-val rekitgo-mono" id="rekitgo-local">—</span>
       </div>
       <div class="rekitgo-row" id="rekitgo-ts-row">
-        <span class="rekitgo-key">Remote (Tailscale)</span>
-        <span class="rekitgo-val" id="rekitgo-tailscale">—</span>
-      </div>
-      <div class="rekitgo-row">
-        <span class="rekitgo-key">Token</span>
-        <span class="rekitgo-val rekitgo-mono" id="rekitgo-token">—</span>
+        <span class="rekitgo-key">Remote URL</span>
+        <span class="rekitgo-val rekitgo-mono" id="rekitgo-tailscale">—</span>
       </div>
     </div>
     <p class="rekitgo-offline-msg" id="rekitgo-offline-msg" style="display:none">
       RekitBox is running offline — local tools work normally.<br>
-      Install <strong>Tailscale</strong> on this Mac and your iPhone for remote access.
+      Connect to Wi-Fi or install <strong>Tailscale</strong> for remote access.
     </p>
   </div>
 
