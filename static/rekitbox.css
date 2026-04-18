@@ -2188,6 +2188,57 @@ body.log-open #fb-panel { bottom: calc(var(--log-h) + var(--scan-bar-h) + 4px); 
   box-shadow: 0 0 8px rgba(123,47,255,.2);
 }
 
+/* ── Per-tool interrupted-run resume banner ─────────────────────────────────
+   Injected dynamically into each card's .card-form when a stale checkpoint
+   is detected on page load.                                                   */
+.tool-resume-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: rgba(251,191,36,.06);
+  border: 1px solid rgba(251,191,36,.28);
+  border-radius: 7px;
+  font-size: .81rem;
+  animation: sb-fade-in .22s ease;
+}
+.trb-icon { font-size: 1.05rem; flex-shrink: 0; opacity: .75; }
+.trb-text { flex: 1; min-width: 0; }
+.trb-title {
+  font-weight: 600;
+  color: var(--caution);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trb-paths {
+  color: var(--text-muted);
+  font-size: .73rem;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trb-btn-resume {
+  padding: 5px 14px !important;
+  font-size: .78rem !important;
+  flex-shrink: 0;
+}
+.trb-btn-dismiss {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: .9rem;
+  padding: 4px 6px;
+  flex-shrink: 0;
+  opacity: .55;
+  transition: opacity .15s;
+  line-height: 1;
+}
+.trb-btn-dismiss:hover { opacity: 1; }
+
 /* ══ Pipeline button (in tools panel) ════════════════════════════════════════ */
 /* log-open shift handled in the consolidated block above */
 

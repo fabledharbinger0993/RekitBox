@@ -1273,7 +1273,16 @@ function runProcess() {
   p.set('no_normalize', '1');
   const el = document.getElementById('process-result');
   if (el) el.classList.add('hidden');
-  runCommand(`/api/run/process?${p}`, 'Tag Tracks — BPM & Key Detection', null, true, false);
+  _saveToolCkpt('process', {
+    paths,
+    no_bpm:      document.getElementById('process-no-bpm').checked,
+    no_key:      document.getElementById('process-no-key').checked,
+    force:       document.getElementById('process-force').checked,
+    enrich_tags: document.getElementById('process-enrich-tags')?.checked || false,
+  });
+  document.getElementById('step-process')?.querySelector('.tool-resume-banner')?.remove();
+  runCommand(`/api/run/process?${p}`, 'Tag Tracks — BPM & Key Detection',
+    ec => { if (ec === 0) _clearToolCkpt('process'); }, true, false);
 }
 
 function _runProcessRetry(body) {
@@ -1343,23 +1352,28 @@ function _runProcessRetry(body) {
   });
 }
 
-function runNormalize() {
+function runNormalize(_skipConfirm = false) {
   const paths = getFolderPaths('normalize-pills');
   if (!paths.length) { alert('Add at least one music folder first.'); return; }
-  const confirmed = confirm(
-    'This will rewrite audio files.\n\n' +
-    'Originals are renamed .bak during the operation and deleted only after the new file is verified.\n\n' +
-    'Make sure you have an independent backup of your drive before proceeding.\n\n' +
-    'Continue?'
-  );
-  if (!confirmed) return;
+  if (!_skipConfirm) {
+    const confirmed = confirm(
+      'This will rewrite audio files.\n\n' +
+      'Originals are renamed .bak during the operation and deleted only after the new file is verified.\n\n' +
+      'Make sure you have an independent backup of your drive before proceeding.\n\n' +
+      'Continue?'
+    );
+    if (!confirmed) return;
+  }
   const workers = document.getElementById('normalize-workers')?.value || '4';
   const p = new URLSearchParams({ no_bpm: '1', no_key: '1' });
   paths.forEach(path => p.append('path', path));
   if (parseInt(workers) > 1) p.set('workers', workers);
   const el = document.getElementById('normalize-result');
   if (el) el.classList.add('hidden');
-  runCommand(`/api/run/process?${p}`, 'Normalize — Loudness to −8.0 LUFS', null, true, false);
+  _saveToolCkpt('normalize', { paths, workers });
+  document.getElementById('step-normalize')?.querySelector('.tool-resume-banner')?.remove();
+  runCommand(`/api/run/process?${p}`, 'Normalize — Loudness to −8.0 LUFS',
+    ec => { if (ec === 0) _clearToolCkpt('normalize'); }, true, false);
 }
 
 function runImportDry() {
@@ -1414,9 +1428,12 @@ function runDuplicates() {
     const thresholdPct = parseInt(document.getElementById('fuzzy-threshold')?.value || '85');
     p.set('fuzzy_threshold', (thresholdPct / 100).toFixed(2));
   }
+  _saveToolCkpt('duplicates', { paths, workers, matchMode });
+  document.getElementById('step-duplicates')?.querySelector('.tool-resume-banner')?.remove();
   const title = 'Find Duplicates — Acoustic Fingerprinting';
   runCommand(`/api/run/duplicates?${p}`, title, (exitCode) => {
     if (exitCode === 0) {
+      _clearToolCkpt('duplicates');
       const rp = sessionReports[title]?.reportPath;
       if (rp) {
         const el = document.getElementById('prune-csv-path');
@@ -1448,7 +1465,10 @@ function runConvert() {
   const p = new URLSearchParams({ format });
   paths.forEach(path => p.append('path', path));
   if (parseInt(workers) > 1) p.set('workers', workers);
-  runCommand(`/api/run/convert?${p}`, `Converting Audio Files to ${format.toUpperCase()}`);
+  _saveToolCkpt('convert', { paths, format, workers });
+  document.getElementById('step-convert')?.querySelector('.tool-resume-banner')?.remove();
+  runCommand(`/api/run/convert?${p}`, `Converting Audio Files to ${format.toUpperCase()}`,
+    ec => { if (ec === 0) _clearToolCkpt('convert'); });
 }
 
 /* ── Pipeline Builder ──────────────────────────────────────────────────────── */
@@ -1959,6 +1979,151 @@ function _loadPipeCfg(type) {
   try { return JSON.parse(localStorage.getItem(`sb_pipe_cfg_${type}`)) || {}; } catch(_) { return {}; }
 }
 
+/* ── Per-tool run checkpoint ───────────────────────────────────────────────
+   Each long-running tool saves its config to localStorage when it starts.
+   On page load, stale checkpoints become "Interrupted run" banners on the
+   card, offering Resume (re-run same config) or Dismiss (start fresh).      */
+
+const _TOOL_CKPT = key => `rb_ckpt_${key}`;
+
+function _saveToolCkpt(toolKey, cfg) {
+  try { localStorage.setItem(_TOOL_CKPT(toolKey), JSON.stringify({ ...cfg, ts: Date.now() })); }
+  catch(_) {}
+}
+function _loadToolCkpt(toolKey) {
+  try { return JSON.parse(localStorage.getItem(_TOOL_CKPT(toolKey))); }
+  catch(_) { return null; }
+}
+function _clearToolCkpt(toolKey) {
+  try { localStorage.removeItem(_TOOL_CKPT(toolKey)); } catch(_) {}
+}
+
+// Resume-function registry — populated by _showToolResumeBanner
+const _toolResumeFns = {};
+
+function _showToolResumeBanner(toolKey, cardId, resumeFn) {
+  const ckpt = _loadToolCkpt(toolKey);
+  const card = document.getElementById(cardId);
+  if (!card || card.style.display === 'none') return;
+  // Remove stale banner if checkpoint is gone
+  const existing = card.querySelector('.tool-resume-banner');
+  if (!ckpt) { existing?.remove(); return; }
+  if (existing) return; // already showing
+
+  const age      = Math.round((Date.now() - (ckpt.ts || 0)) / 60000);
+  const ageText  = age < 1 ? 'just now' : age < 60 ? `${age}m ago` : `${Math.round(age / 60)}h ago`;
+  const mainPaths = ckpt.paths || ckpt.sources || [];
+  const pathsText = mainPaths.length ? mainPaths.join(', ') : 'previous paths';
+
+  const banner = document.createElement('div');
+  banner.className = 'tool-resume-banner';
+  banner.innerHTML = `
+    <div class="trb-icon">⏸</div>
+    <div class="trb-text">
+      <div class="trb-title">Interrupted run — ${ageText}</div>
+      <div class="trb-paths">${pathsText}</div>
+    </div>
+    <button class="btn btn-neon trb-btn-resume" onclick="_resumeTool('${toolKey}')">Resume</button>
+    <button class="trb-btn-dismiss" title="Dismiss — start fresh" onclick="_dismissToolCkpt('${toolKey}', '${cardId}')">✕</button>`;
+
+  const form = card.querySelector('.card-form');
+  if (form) form.prepend(banner);
+  else card.appendChild(banner);
+  _toolResumeFns[toolKey] = resumeFn;
+}
+
+function _resumeTool(toolKey) {
+  const ckpt = _loadToolCkpt(toolKey);
+  if (ckpt && _toolResumeFns[toolKey]) _toolResumeFns[toolKey](ckpt);
+}
+
+function _dismissToolCkpt(toolKey, cardId) {
+  _clearToolCkpt(toolKey);
+  document.getElementById(cardId)?.querySelector('.tool-resume-banner')?.remove();
+}
+
+function _populatePills(pillsId, paths) {
+  const c = document.getElementById(pillsId);
+  if (c) c.innerHTML = '';
+  (paths || []).forEach(p => addFolderPill(pillsId, p));
+}
+
+// ── Resume functions — restore form state and re-run ─────────────────────────
+function _resumeProcess(ckpt) {
+  _populatePills('process-pills', ckpt.paths);
+  document.getElementById('process-no-bpm').checked  = !!ckpt.no_bpm;
+  document.getElementById('process-no-key').checked  = !!ckpt.no_key;
+  document.getElementById('process-force').checked   = false; // never force on resume
+  const enrich = document.getElementById('process-enrich-tags');
+  if (enrich) enrich.checked = !!ckpt.enrich_tags;
+  document.getElementById('step-process')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  runProcess();
+}
+
+function _resumeNormalize(ckpt) {
+  _populatePills('normalize-pills', ckpt.paths);
+  const w = document.getElementById('normalize-workers');
+  if (w && ckpt.workers) w.value = ckpt.workers;
+  document.getElementById('step-normalize')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  runNormalize(true); // _skipConfirm = true
+}
+
+function _resumeConvert(ckpt) {
+  _populatePills('convert-pills', ckpt.paths);
+  const fmt = document.getElementById('convert-format');
+  if (fmt && ckpt.format) fmt.value = ckpt.format;
+  const w = document.getElementById('convert-workers');
+  if (w && ckpt.workers) w.value = ckpt.workers;
+  document.getElementById('step-convert')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  runConvert();
+}
+
+function _resumeDuplicates(ckpt) {
+  _populatePills('dupes-pills', ckpt.paths);
+  const w = document.getElementById('dupes-workers');
+  if (w && ckpt.workers) w.value = ckpt.workers;
+  if (ckpt.matchMode) {
+    const radio = document.querySelector(`input[name="dupes-match-mode"][value="${ckpt.matchMode}"]`);
+    if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+  }
+  document.getElementById('step-duplicates')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  runDuplicates();
+}
+
+function _resumeOrganize(ckpt) {
+  _populatePills('organize-source-pills', ckpt.sources);
+  const t = document.getElementById('organize-target');
+  if (t && ckpt.target) t.value = ckpt.target;
+  const mode = document.getElementById('organize-mode');
+  if (mode && ckpt.mode) mode.value = ckpt.mode;
+  const w = document.getElementById('organize-workers');
+  if (w && ckpt.workers) w.value = ckpt.workers;
+  const dr = document.getElementById('organize-dry-run');
+  if (dr) dr.checked = !!ckpt.dryRun;
+  document.getElementById('step-organize')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  runOrganize();
+}
+
+function _resumeNovelty(ckpt) {
+  _populatePills('novelty-pills', ckpt.sources);
+  const d = document.getElementById('novelty-dest');
+  if (d && ckpt.dest) d.value = ckpt.dest;
+  const dr = document.getElementById('novelty-dry-run');
+  if (dr) dr.checked = !!ckpt.dryRun;
+  document.getElementById('step-novelty')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  runNovelty();
+}
+
+// ── Init — show banners for any stale checkpoints on page load ───────────────
+function _initToolCheckpoints() {
+  _showToolResumeBanner('process',    'step-process',    _resumeProcess);
+  _showToolResumeBanner('normalize',  'step-normalize',  _resumeNormalize);
+  _showToolResumeBanner('convert',    'step-convert',    _resumeConvert);
+  _showToolResumeBanner('duplicates', 'step-duplicates', _resumeDuplicates);
+  _showToolResumeBanner('organize',   'step-organize',   _resumeOrganize);
+  _showToolResumeBanner('novelty',    'step-novelty',    _resumeNovelty);
+}
+
 /* ── Pipeline checkpoint: survive interruptions and resume ────────────────── */
 function _savePipeCheckpoint(steps, completedIdx, dryRun) {
   try {
@@ -2413,10 +2578,17 @@ function runOrganize() {
   if (threshold !== '15') p.set('mix_threshold', threshold);
   const modeLabel = mode === 'integrate' ? 'Integration (copies only, source untouched)' : 'Assimilation (move + clean source)';
   const label = dryRun ? `Organize — Dry Run · ${modeLabel}` : `Organize — ${modeLabel}`;
+  if (!dryRun) {
+    _saveToolCkpt('organize', { sources, target, mode, workers, dryRun: false });
+    document.getElementById('step-organize')?.querySelector('.tool-resume-banner')?.remove();
+  }
   const _orgTarget = target;
   const _orgDry    = dryRun;
   runCommand(`/api/run/organize?${p}`, label, (exitCode) => {
-    if (exitCode === 0 && !_orgDry) _promptSetLibraryRoot(_orgTarget);
+    if (exitCode === 0) {
+      _clearToolCkpt('organize');
+      if (!_orgDry) _promptSetLibraryRoot(_orgTarget);
+    }
   });
 }
 
@@ -2434,7 +2606,12 @@ function runNovelty() {
   const label = dryRun
     ? 'Novelty Scan — Dry Run (nothing will be copied)'
     : 'Novelty Scan — Copying novel tracks to destination';
-  runCommand(`/api/run/novelty?${p}`, label);
+  if (!dryRun) {
+    _saveToolCkpt('novelty', { sources, dest, dryRun: false });
+    document.getElementById('step-novelty')?.querySelector('.tool-resume-banner')?.remove();
+  }
+  runCommand(`/api/run/novelty?${p}`, label,
+    ec => { if (ec === 0) _clearToolCkpt('novelty'); });
 }
 
 /* ── Prune Duplicates ──────────────────────────────────────────────────────── */
@@ -3670,6 +3847,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSinglePathZone('novelty-dest-zone',    'novelty-dest');
   setupAllDropZones();
   normPreviewSetupObserver();
+  _initToolCheckpoints();
 });
 
 /* ── Normalize loudness preview player ──────────────────────────────────────
