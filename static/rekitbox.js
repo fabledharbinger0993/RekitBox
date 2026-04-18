@@ -496,7 +496,6 @@ function showToast(message, type = 'neutral') {
 
 async function interruptScan() {
   if (!isRunning) return;
-  if (!confirm('Ask the scan to stop gracefully?\n\nThe process will receive a stop signal and try to clean up. The server will remain running.')) return;
   const btn = document.getElementById('scan-bar-interrupt');
   btn.textContent = '⏸ Stopping…'; btn.disabled = true;
   try {
@@ -508,11 +507,27 @@ async function interruptScan() {
   }
 }
 
+let _emergencyArmed = false;
+let _emergencyArmTimer = null;
+
 async function emergencyStop() {
   if (!isRunning) return;
-  if (!confirm('Force-kill the scan immediately?\n\nThis will hard-terminate the process. Any in-progress writes may be incomplete.\n\nThe server will remain running.')) return;
   const btn = document.getElementById('scan-bar-emergency');
-  btn.textContent = '⚡ Killing…'; btn.disabled = true;
+  if (!_emergencyArmed) {
+    // First click — arm it for 3 seconds, require a second click to confirm
+    _emergencyArmed = true;
+    btn.textContent = '⚡ Click again to confirm';
+    btn.classList.add('armed');
+    _emergencyArmTimer = setTimeout(() => {
+      _emergencyArmed = false;
+      if (btn) { btn.textContent = '⚡ Emergency Stop'; btn.classList.remove('armed'); }
+    }, 3000);
+    return;
+  }
+  // Second click — fire
+  clearTimeout(_emergencyArmTimer);
+  _emergencyArmed = false;
+  btn.textContent = '⚡ Killing…'; btn.disabled = true; btn.classList.remove('armed');
   try {
     await fetch('/api/cancel/force', { method: 'POST' });
     appendLog('⚡ Emergency stop — process force-killed. Server is still running.', 'error');
@@ -992,7 +1007,10 @@ function updateScanBar(p) {
 function finishScanBar() {
   document.getElementById('scan-bar-spinner').classList.remove('active');
   document.getElementById('scan-bar-interrupt').style.display = 'none';
-  document.getElementById('scan-bar-emergency').style.display = 'none';
+  const eb = document.getElementById('scan-bar-emergency');
+  eb.style.display = 'none'; eb.classList.remove('armed');
+  _emergencyArmed = false;
+  clearTimeout(_emergencyArmTimer);
   document.getElementById('scan-bar-dismiss').style.display = 'inline-block';
 }
 function dismissScanBar() {

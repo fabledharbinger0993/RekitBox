@@ -634,6 +634,15 @@ body.log-open #scan-bar { bottom: var(--log-h); }
 }
 .scan-bar-emergency-btn:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .scan-bar-emergency-btn:disabled { opacity: .5; cursor: default; }
+.scan-bar-emergency-btn.armed {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  border-color: var(--danger);
+  animation: scan-bar-armed-pulse .6s ease-in-out infinite alternate;
+}
+@keyframes scan-bar-armed-pulse {
+  from { opacity: .7; }
+  to   { opacity: 1; }
+}
 
 /* ── Log panel ───────────────────────────────────────────────────────────── */
 #log-panel {
