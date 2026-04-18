@@ -90,7 +90,7 @@ struct NewDownloadSheet: View {
     @State private var url         = ""
     @State private var format      = "aiff"
     @State private var destination = ""
-    @State private var folders:    [[String: Any]] = []
+    @State private var folders:    [Folder] = []
 
     let formats = ["aiff", "flac", "wav", "mp3"]
 
@@ -116,10 +116,8 @@ struct NewDownloadSheet: View {
                             .textInputAutocapitalization(.never)
                     } else {
                         Picker("Folder", selection: $destination) {
-                            ForEach(folders, id: \.description) { f in
-                                if let path = f["path"] as? String {
-                                    Text(path).tag(path)
-                                }
+                            ForEach(folders) { folder in
+                                Text(folder.path).tag(folder.path)
                             }
                         }
                     }

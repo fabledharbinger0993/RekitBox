@@ -3,12 +3,35 @@ import Foundation
 // MARK: - Server connection
 
 struct ServerConfig: Codable {
+    private static let minPort = 1
+    private static let maxPort = 65535
+
     var host: String        // e.g. "100.94.x.x" (Tailscale) or LAN IP
     var port: Int = 5001
     var token: String
 
-    var baseURL: URL {
-        URL(string: "http://\(host):\(port)")!
+    private var normalizedHost: String? {
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else { return nil }
+
+        if trimmedHost.hasPrefix("[") && trimmedHost.hasSuffix("]") {
+            let start = trimmedHost.index(after: trimmedHost.startIndex)
+            let end = trimmedHost.index(before: trimmedHost.endIndex)
+            let unbracketedHost = String(trimmedHost[start..<end])
+            return unbracketedHost.isEmpty ? nil : unbracketedHost
+        }
+
+        return trimmedHost
+    }
+
+    var baseURL: URL? {
+        guard let normalizedHost, (Self.minPort...Self.maxPort).contains(port) else { return nil }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = normalizedHost
+        components.port = port
+        return components.url
     }
 }
 
@@ -105,6 +128,19 @@ struct Drive: Identifiable, Codable {
     var id: String { path }
 }
 
+struct Folder: Identifiable, Codable, Hashable {
+    let name: String
+    let path: String
+    let fileCount: Int?
+
+    var id: String { path }
+
+    enum CodingKeys: String, CodingKey {
+        case name, path
+        case fileCount = "file_count"
+    }
+}
+
 // MARK: - Export job
 
 struct ExportJob: Codable {
@@ -116,36 +152,5 @@ struct ExportJob: Codable {
     enum CodingKeys: String, CodingKey {
         case jobId = "job_id"
         case status, progress, message
-    }
-}
-
-// MARK: - WebSocket event envelope
-
-struct WSEvent: Decodable {
-    let type: String
-    let job: AnyCodable?
-}
-
-// Simple type-erased Codable wrapper for heterogeneous WS payloads
-struct AnyCodable: Codable {
-    let value: Any
-    init(_ value: Any) { self.value = value }
-    init(from decoder: Decoder) throws {
-        let c = try decoder.singleValueContainer()
-        if let v = try? c.decode(Bool.self)   { value = v; return }
-        if let v = try? c.decode(Int.self)    { value = v; return }
-        if let v = try? c.decode(Double.self) { value = v; return }
-        if let v = try? c.decode(String.self) { value = v; return }
-        value = try c.decode([String: AnyCodable].self)
-    }
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.singleValueContainer()
-        switch value {
-        case let v as Bool:   try c.encode(v)
-        case let v as Int:    try c.encode(v)
-        case let v as Double: try c.encode(v)
-        case let v as String: try c.encode(v)
-        default: try c.encodeNil()
-        }
     }
 }

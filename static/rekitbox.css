@@ -2369,9 +2369,9 @@ body.log-open #pipeline-btn { bottom: calc(var(--log-h) + var(--scan-bar-h) + 28
 
 /* Duplicate pill: flash amber to signal "already added" */
 @keyframes pill-already {
-  0%   { background: rgba(100,40,200,.12); border-color: rgba(0,120,180,.42); }
+  0%   { background: rgba(0,194,255,.10); border-color: rgba(0,194,255,.42); }
   40%  { background: rgba(251,191,36,.28); border-color: rgba(251,191,36,.75); color: #fbbf24; }
-  100% { background: rgba(100,40,200,.12); border-color: rgba(0,120,180,.42); }
+  100% { background: rgba(0,194,255,.10); border-color: rgba(0,194,255,.42); }
 }
 .folder-pill.pill-already { animation: pill-already .45s ease forwards; }
 
@@ -2381,14 +2381,14 @@ body.log-open #pipeline-btn { bottom: calc(var(--log-h) + var(--scan-bar-h) + 28
   50%       { box-shadow: 0 0 18px 6px rgba(0,120,180,.50), 0 0 38px 12px rgba(0,120,180,.20); }
 }
 body.has-drag .folder-zone:not(.drag-over) {
-  border-color: rgba(130, 60, 240, 0.82);
+  border-color: rgba(0,194,255,.82);
   animation: zone-idle-pulse 1.1s ease-in-out infinite;
 }
 body.has-drag .drop-wrap:not(.drop-active)::after {
-  border-color: rgba(130, 60, 240, 0.82);
+  border-color: rgba(0,194,255,.82);
   box-shadow:
-    0 0  8px  3px rgba(120, 50, 230, 0.45),
-    0 0 20px  6px rgba(120, 50, 230, 0.18);
+    0 0  8px  3px rgba(0,194,255,.45),
+    0 0 20px  6px rgba(0,194,255,.18);
   animation: zone-idle-pulse 1.1s ease-in-out infinite;
 }
 

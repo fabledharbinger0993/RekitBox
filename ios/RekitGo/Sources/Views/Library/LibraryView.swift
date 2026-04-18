@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     @EnvironmentObject var store: AppStore
     @State private var search = ""
+    @State private var searchTask: Task<Void, Never>? = nil
 
     var body: some View {
         NavigationStack {
@@ -11,7 +12,12 @@ struct LibraryView: View {
             }
             .searchable(text: $search, prompt: "Title or artist")
             .onChange(of: search) { _, q in
-                Task { await store.loadTracks(search: q.isEmpty ? nil : q) }
+                searchTask?.cancel()
+                searchTask = Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
+                    await store.loadTracks(search: q.isEmpty ? nil : q)
+                }
             }
             .refreshable { await store.loadTracks(search: search.isEmpty ? nil : search) }
             .navigationTitle("Library")
@@ -21,7 +27,11 @@ struct LibraryView: View {
                     ContentUnavailableView.search(text: search)
                 }
             }
-            .task { await store.loadTracks() }
+            .task { await store.loadTracks(search: search.isEmpty ? nil : search) }
+            .onDisappear {
+                searchTask?.cancel()
+                searchTask = nil
+            }
         }
     }
 }

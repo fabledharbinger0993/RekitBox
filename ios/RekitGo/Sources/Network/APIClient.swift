@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 // MARK: - API errors
 
@@ -26,6 +27,10 @@ enum APIError: LocalizedError {
 final class APIClient: ObservableObject {
 
     static let shared = APIClient()
+    private static let configDefaultsKey = "serverConfig"
+    private static let tokenService = "com.fabledharbinger.rekitgo"
+    private static let tokenAccount = "mobile_token"
+    private static let wsReconnectDelay: TimeInterval = 3
 
     @Published var config: ServerConfig? {
         didSet { saveConfig() }
@@ -141,50 +146,65 @@ final class APIClient: ObservableObject {
 
     // MARK: Folders
 
-    func fetchFolders() async throws -> [[String: Any]] {
+    func fetchFolders() async throws -> [Folder] {
         let data = try await get("/api/mobile/folders")
-        guard let arr = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        return arr
+        return try decode([Folder].self, from: data)
     }
 
     // MARK: WebSocket
 
     func connectWebSocket() {
-        guard let cfg = config else { return }
-
-        var components = URLComponents()
-        components.scheme = "ws"
-        components.host = cfg.host
-        components.port = cfg.port
-        components.path = "/api/mobile/events"
-
-        guard let url = components.url else { return }
+        guard let cfg = config, let url = websocketURL(for: cfg) else { return }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(cfg.token)", forHTTPHeaderField: "Authorization")
-        wsTask = URLSession.shared.webSocketTask(with: req)
-        wsTask?.resume()
-        receiveNextMessage()
+
+        if let existingTask = wsTask {
+            let sameEndpoint =
+                existingTask.originalRequest?.url == req.url &&
+                existingTask.originalRequest?.value(forHTTPHeaderField: "Authorization") ==
+                req.value(forHTTPHeaderField: "Authorization")
+            if sameEndpoint {
+                return
+            }
+            disconnectWebSocket()
+        }
+
+        let task = URLSession.shared.webSocketTask(with: req)
+        wsTask = task
+        task.resume()
+        receiveNextMessage(on: task)
     }
 
     func disconnectWebSocket() {
-        wsTask?.cancel(with: .normalClosure, reason: nil)
+        let task = wsTask
         wsTask = nil
+        task?.cancel(with: .normalClosure, reason: nil)
     }
 
-    private func receiveNextMessage() {
-        wsTask?.receive { [weak self] result in
+    private func receiveNextMessage(on task: URLSessionWebSocketTask) {
+        task.receive { [weak self, weak task] result in
+            guard let self, let task else { return }
             switch result {
             case .success(.string(let text)):
-                DispatchQueue.main.async { self?.onEvent?(text) }
-                self?.receiveNextMessage()
-            case .success(.data(let d)):
-                if let text = String(data: d, encoding: .utf8) {
-                    DispatchQueue.main.async { self?.onEvent?(text) }
+                Task { @MainActor in
+                    guard self.wsTask === task else { return }
+                    self.onEvent?(text)
+                    self.receiveNextMessage(on: task)
                 }
-                self?.receiveNextMessage()
+            case .success(.data(let d)):
+                Task { @MainActor in
+                    guard self.wsTask === task else { return }
+                    if let text = String(data: d, encoding: .utf8) {
+                        self.onEvent?(text)
+                    }
+                    self.receiveNextMessage(on: task)
+                }
             case .failure:
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    self?.connectWebSocket()
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.wsReconnectDelay) {
+                    Task { @MainActor in
+                        guard self.wsTask === task else { return }
+                        self.connectWebSocket()
+                    }
                 }
             @unknown default: break
             }
@@ -195,7 +215,8 @@ final class APIClient: ObservableObject {
 
     private func request(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
         guard let cfg = config else { throw APIError.notConfigured }
-        guard let url = URL(string: path, relativeTo: cfg.baseURL)?.absoluteURL else {
+        guard let baseURL = cfg.baseURL else { throw APIError.message("Invalid server configuration.") }
+        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
             throw APIError.message("Invalid request URL.")
         }
         var req = URLRequest(url: url)
@@ -239,16 +260,96 @@ final class APIClient: ObservableObject {
     // MARK: Config persistence
 
     private func saveConfig() {
-        guard let cfg = config,
-              let data = try? JSONEncoder().encode(cfg) else { return }
-        UserDefaults.standard.set(data, forKey: "serverConfig")
+        let defaults = UserDefaults.standard
+
+        guard let cfg = config else {
+            defaults.removeObject(forKey: Self.configDefaultsKey)
+            deleteTokenFromKeychain()
+            disconnectWebSocket()
+            return
+        }
+
+        let persisted = PersistedServerConfig(host: cfg.host, port: cfg.port)
+        guard let data = try? JSONEncoder().encode(persisted) else {
+            defaults.removeObject(forKey: Self.configDefaultsKey)
+            return
+        }
+
+        defaults.set(data, forKey: Self.configDefaultsKey)
+        saveTokenToKeychain(cfg.token)
     }
 
     private func loadConfig() -> ServerConfig? {
-        guard let data = UserDefaults.standard.data(forKey: "serverConfig"),
-              let cfg  = try? JSONDecoder().decode(ServerConfig.self, from: data) else { return nil }
-        return cfg
+        guard let data = UserDefaults.standard.data(forKey: Self.configDefaultsKey),
+              let persisted = try? JSONDecoder().decode(PersistedServerConfig.self, from: data),
+              let token = loadTokenFromKeychain() else { return nil }
+        return ServerConfig(host: persisted.host, port: persisted.port, token: token)
     }
+
+    private func websocketURL(for cfg: ServerConfig) -> URL? {
+        guard let baseURL = cfg.baseURL,
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        components.scheme = "ws"
+        components.path = "/api/mobile/events"
+        components.query = nil
+        return components.url
+    }
+
+    private func saveTokenToKeychain(_ token: String) {
+        guard !token.isEmpty else {
+            deleteTokenFromKeychain()
+            return
+        }
+
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.tokenService,
+            kSecAttrAccount: Self.tokenAccount
+        ]
+
+        SecItemDelete(query as CFDictionary)
+
+        let item: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.tokenService,
+            kSecAttrAccount: Self.tokenAccount,
+            kSecValueData: Data(token.utf8),
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        SecItemAdd(item as CFDictionary, nil)
+    }
+
+    private func loadTokenFromKeychain() -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.tokenService,
+            kSecAttrAccount: Self.tokenAccount,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty else { return nil }
+        return token
+    }
+
+    private func deleteTokenFromKeychain() {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Self.tokenService,
+            kSecAttrAccount: Self.tokenAccount
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+private struct PersistedServerConfig: Codable {
+    let host: String
+    let port: Int
 }
 
 // MARK: - Request body types
