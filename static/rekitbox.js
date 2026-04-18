@@ -498,7 +498,7 @@ function _brewRender(data) {
   const list = outdated.map(p =>
     `<strong>${p.name}</strong> ${p.installed} → ${p.current}`
   ).join(' &nbsp;·&nbsp; ');
-  msgEl.innerHTML = `Homebrew updates available for SuperBox packages: ${list}`;
+  msgEl.innerHTML = `Homebrew updates available for RekitBox packages: ${list}`;
   banner.style.display = 'flex';
 }
 
@@ -696,7 +696,7 @@ function rekitboxUpdateDismiss() {
 
 function runBrewUpgrade() {
   brewDismiss();
-  runCommand('/api/run/brew-upgrade', 'Homebrew — Upgrade SuperBox Packages');
+  runCommand('/api/run/brew-upgrade', 'Homebrew — Upgrade RekitBox Packages');
 }
 
 // Check on page load (non-blocking — banners appear only if updates found)
@@ -1546,7 +1546,7 @@ function pipeWizBuildConfigs() {
   });
 
   pipelineSteps.forEach((step, i) => {
-    const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/SRB_LOGO.png', desc: '' };
+    const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/RB_LOGO.png', desc: '' };
     const label = _typeLabel(pipelineSteps, step, i);
     const ready = _stepIsReady(step);
 
@@ -1577,7 +1577,7 @@ function pipeWizSelectStep(i) {
 
   const step  = pipelineSteps[i];
   if (!step) return;
-  const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/SRB_LOGO.png', desc: '' };
+  const def   = PIPE_STEPS[step.type] || { name: step.type, icon: '/static/RB_LOGO.png', desc: '' };
   const label = _typeLabel(pipelineSteps, step, i);
   const panel = document.getElementById('pipe-wiz-active-cfg');
 
@@ -2627,22 +2627,22 @@ const GLOSSARY = [
     short:'Database — where RekordBox stores everything',
     body:`<p><strong>Database</strong> — a structured file that stores information in organized tables, like a very powerful spreadsheet that the computer reads and writes directly.</p>
 <p>RekordBox uses one file called <code>master.db</code> to remember your entire library: track names, BPM, key, playlists, cue points, loops — all of it lives in there.</p>
-<p>Every write operation in SuperBox creates a timestamped backup of this file before touching it.</p>`},
+<p>Every write operation in RekitBox creates a timestamped backup of this file before touching it.</p>`},
 
   { id:'cli', cat:'Tech', term:'CLI',
     short:'Command-Line Interface — terminal window',
     body:`<p><strong>Command-Line Interface</strong> — the text window (Terminal on Mac) where you type instructions directly to the computer instead of clicking buttons in an app.</p>
-<p>SuperBox's CLI is the actual engine doing the work. This web dashboard is just a control panel that talks to the engine so you never have to type commands yourself.</p>`},
+<p>RekitBox's CLI is the actual engine doing the work. This web dashboard is just a control panel that talks to the engine so you never have to type commands yourself.</p>`},
 
   { id:'py',  cat:'Tech', term:'.py / Python',
-    short:'The programming language SuperBox is built in',
-    body:`<p><strong>Python</strong> — the programming language SuperBox is written in. You don't need to know it or read it.</p>
+    short:'The programming language RekitBox is built in',
+    body:`<p><strong>Python</strong> — the programming language RekitBox is written in. You don't need to know it or read it.</p>
 <p>What you do need: <strong>Python 3.12 or later</strong> installed on your Mac. If something won't start, a wrong Python version is usually the reason. Check with <code>python3 --version</code> in Terminal.</p>`},
 
   { id:'csv', cat:'Tech', term:'CSV',
     short:'Spreadsheet file — opens in Excel or Numbers',
     body:`<p><strong>Comma-Separated Values</strong> — a plain text file that any spreadsheet app (Excel, Numbers, Google Sheets) can open as a table.</p>
-<p>The duplicate detector writes its results to a CSV so you can sort, filter, and decide what to remove at your own pace. SuperBox never deletes files — that decision is always yours.</p>`},
+<p>The duplicate detector writes its results to a CSV so you can sort, filter, and decide what to remove at your own pace. RekitBox never deletes files — that decision is always yours.</p>`},
 
   { id:'sha', cat:'Tech', term:'SHA-256',
     short:'Content fingerprint — proves two files are identical',
@@ -2665,12 +2665,12 @@ const GLOSSARY = [
     id: 'bpm', cat: 'Audio', term: 'BPM',
     short: 'Beats Per Minute — how fast a track is',
     body: `<p><strong>Beats Per Minute</strong> — the tempo of a track. A kick drum at 128 BPM fires 128 times per minute.</p>
-<p>RekordBox stores BPM internally as BPM × 100 (so 128.0 BPM is stored as 12800). SuperBox handles that conversion automatically so you never see raw database values.</p>
+<p>RekordBox stores BPM internally as BPM × 100 (so 128.0 BPM is stored as 12800). RekitBox handles that conversion automatically so you never see raw database values.</p>
 <p>Detection uses <strong>librosa</strong>, which analyzes the actual audio waveform for beat patterns — not guessing from the filename.</p>`},
   { id:'key', cat:'Audio', term:'Musical Key',
     short:'The harmonic "home base" of a track',
     body:`<p>The musical scale a track is built around — determines which other tracks it will sound harmonically compatible with when mixed.</p>
-<p>SuperBox detects key using the <strong>Krumhansl-Schmuckler algorithm</strong> on the audio's chroma features. It understands all three common notations and stores whichever format your database already uses:</p>
+<p>RekitBox detects key using the <strong>Krumhansl-Schmuckler algorithm</strong> on the audio's chroma features. It understands all three common notations and stores whichever format your database already uses:</p>
 <ul><li><strong>Standard</strong> — Am, C, F#m, Bb…</li>
 <li><strong>Camelot</strong> — 1A, 8B, 11A…</li>
 <li><strong>Open Key</strong> — 1m, 8d, 11m…</li></ul>`},
@@ -2684,28 +2684,28 @@ const GLOSSARY = [
   { id:'ebu', cat:'Audio', term:'EBU R128',
     short:'The international loudness measurement standard',
     body:`<p><strong>European Broadcasting Union Recommendation R128</strong> — the international standard defining how to measure integrated loudness correctly.</p>
-<p>The same standard Spotify, YouTube, Apple Music, and broadcast TV use for their loudness normalization. SuperBox uses R128 analysis to measure your tracks and target them to −8.0 LUFS.</p>`},
+<p>The same standard Spotify, YouTube, Apple Music, and broadcast TV use for their loudness normalization. RekitBox uses R128 analysis to measure your tracks and target them to −8.0 LUFS.</p>`},
 
   { id:'cbr', cat:'Audio', term:'CBR 320',
     short:'Highest-quality MP3 encoding setting',
     body:`<p><strong>Constant Bitrate at 320 kbps</strong> — the highest quality setting for MP3 encoding. Every second of audio uses the same amount of data.</p>
-<p>When SuperBox normalizes an MP3, it re-encodes at 320 kbps CBR. This is still a lossy process — any re-encode of a lossy file costs some quality — which is why normalization is optional and having a backup first is strongly recommended.</p>
+<p>When RekitBox normalizes an MP3, it re-encodes at 320 kbps CBR. This is still a lossy process — any re-encode of a lossy file costs some quality — which is why normalization is optional and having a backup first is strongly recommended.</p>
 <p>AIFF and WAV files are re-encoded losslessly, so no quality loss at all.</p>`},
 
   { id:'aiff', cat:'Audio', term:'AIFF / AIF',
     short:'Lossless audio format — full quality, larger file',
     body:`<p><strong>Audio Interchange File Format</strong> — Apple's lossless audio format. Common in professional DJ libraries because it preserves full recording quality and supports embedded cue points that survive a drive wipe.</p>
-<p>When SuperBox normalizes an AIFF it re-encodes losslessly at the same bit depth as your original — no generation loss whatsoever.</p>`},
+<p>When RekitBox normalizes an AIFF it re-encodes losslessly at the same bit depth as your original — no generation loss whatsoever.</p>`},
 
   { id:'id3', cat:'Audio', term:'ID3 Tags',
     short:'Metadata embedded inside the audio file itself',
     body:`<p>The format used to store metadata <em>inside</em> audio files — title, artist, album, BPM, key, year, track number, and more.</p>
-<p>When you see track info in RekordBox, Finder, or iTunes, you're reading ID3 tags. SuperBox writes BPM and key into these tags so the data <strong>travels with the file</strong>, not just in the database. If you ever re-import, the tags are already there.</p>`},
+<p>When you see track info in RekordBox, Finder, or iTunes, you're reading ID3 tags. RekitBox writes BPM and key into these tags so the data <strong>travels with the file</strong>, not just in the database. If you ever re-import, the tags are already there.</p>`},
 
   { id:'fp', cat:'Audio', term:'Chromaprint / fpcalc',
     short:'Acoustic fingerprinting — identifies songs by sound',
     body:`<p><strong>Chromaprint</strong> is the fingerprinting library (used by AcoustID and MusicBrainz) that identifies recordings by their acoustic content — not their metadata.</p>
-<p><code>fpcalc</code> is the command-line tool it ships with. SuperBox calls it to analyze the first 120 seconds of each file and generate a fingerprint. Two identical fingerprints = same recording, no matter what the files are named or what format they're in.</p>
+<p><code>fpcalc</code> is the command-line tool it ships with. RekitBox calls it to analyze the first 120 seconds of each file and generate a fingerprint. Two identical fingerprints = same recording, no matter what the files are named or what format they're in.</p>
 <p>Requires <code>fpcalc</code> installed on your system: <code>brew install chromaprint</code></p>`},
 
   // ── RekordBox ──────────────────────────────────────────────────────────────
@@ -2715,12 +2715,12 @@ const GLOSSARY = [
 <p>Locations:<br>
 <code>~/Library/Pioneer/rekordbox/master.db</code> — your Mac<br>
 <code>/Volumes/[drive]/PIONEER/Master/master.db</code> — your export drive</p>
-<p><strong>Every SuperBox write operation creates a timestamped copy of this file in <code>~/rekordbox-toolkit/backups/</code> before touching it.</strong> The backup header in this app shows you when the last one was made.</p>`},
+<p><strong>Every RekitBox write operation creates a timestamped copy of this file in <code>~/rekordbox-toolkit/backups/</code> before touching it.</strong> The backup header in this app shows you when the last one was made.</p>`},
 
   { id:'cont', cat:'RekordBox', term:'DjmdContent',
     short:'The track table inside master.db',
     body:`<p>The database table where each track gets one row. Every attribute RekordBox knows about a track — title, artist, BPM, key, file path, bit depth, sample rate, cue points — lives here.</p>
-<p>When you import, SuperBox writes rows to this table. When you relocate, it updates the <code>FolderPath</code> column. It's the heart of your library.</p>`},
+<p>When you import, RekitBox writes rows to this table. When you relocate, it updates the <code>FolderPath</code> column. It's the heart of your library.</p>`},
 
   { id:'fp2', cat:'RekordBox', term:'FolderPath',
     short:'The stored file path in the database',
@@ -2737,38 +2737,38 @@ const GLOSSARY = [
     body:`<p>Two notation systems for musical keys designed to make harmonic mixing easy by replacing key names with numbers and letters.</p>
 <p><strong>Camelot</strong> — 1A through 12B. Adjacent numbers are harmonically compatible.<br>
 <strong>Open Key</strong> — 1m through 12d. Same concept, different notation.</p>
-<p>SuperBox maps all notations — including standard (Am, C#, F#m, etc.) — to whichever format your database already uses.</p>`},
+<p>RekitBox maps all notations — including standard (Am, C#, F#m, etc.) — to whichever format your database already uses.</p>`},
 
-  // ── SuperBox ───────────────────────────────────────────────────────────────
-  { id:'dry', cat:'SuperBox', term:'Dry Run',
+  // ── RekitBox ───────────────────────────────────────────────────────────────
+  { id:'dry', cat:'RekitBox', term:'Dry Run',
     short:'Preview mode — shows what would happen, writes nothing',
     body:`<p>Running a command with dry run enabled shows you exactly what <em>would</em> happen — how many tracks would be imported, what paths would change — without writing a single byte to the database.</p>
 <p><strong>Always run the Preview Import step before the real import.</strong> If the track count looks wrong, you haven't broken anything yet. The dry run is free.</p>`},
 
-  { id:'bat', cat:'SuperBox', term:'Batch Commit',
+  { id:'bat', cat:'RekitBox', term:'Batch Commit',
     short:'Writing changes in chunks of 250',
-    body:`<p>Instead of writing one track at a time (slow) or all tracks at once (risky), SuperBox collects 250 changes and writes them as a single transaction.</p>
+    body:`<p>Instead of writing one track at a time (slow) or all tracks at once (risky), RekitBox collects 250 changes and writes them as a single transaction.</p>
 <p>If that transaction fails, the entire chunk rolls back — you never end up with 137 tracks written and 113 missing in a half-finished state.</p>`},
 
-  { id:'rol', cat:'SuperBox', term:'Rollback',
+  { id:'rol', cat:'RekitBox', term:'Rollback',
     short:'Auto-undo on failure — prevents partial writes',
     body:`<p>If any unhandled error occurs during a write operation, the database transaction is automatically cancelled — every pending change in that session is undone as if it never started.</p>
 <p>This is the mechanism that prevents partial imports. Either a full batch of 250 tracks lands cleanly, or none of them do. You will never have a half-imported library.</p>`},
 
-  { id:'orp', cat:'SuperBox', term:'Orphan File',
+  { id:'orp', cat:'RekitBox', term:'Orphan File',
     short:'File on disk that RekordBox doesn\'t know about',
     body:`<p>An audio file that exists in your music folder but has no matching row in the RekordBox database — RekordBox doesn't know it's there.</p>
 <p>Orphans appear in the Audit report. Common causes: files copied directly into the folder without going through an import, or leftovers from a failed previous import. The import step is how you bring them in.</p>`},
 
-  { id:'fuz', cat:'SuperBox', term:'Fuzzy Match',
+  { id:'fuz', cat:'RekitBox', term:'Fuzzy Match',
     short:'Approximate name matching — catches near-misses',
     body:`<p>Instead of requiring an exact string match, fuzzy matching scores text similarity and accepts anything above a threshold.</p>
-<p>SuperBox uses it in two places:</p>
+<p>RekitBox uses it in two places:</p>
 <ul><li><strong>Playlist linking</strong> — folder name vs. playlist name, 85% threshold</li>
 <li><strong>File relocation</strong> — filename stem similarity, 90% threshold</li></ul>
 <p>Higher threshold = stricter = fewer false positives, but more unmatched items. The defaults are tuned for DJ library naming conventions.</p>`},
 
-  { id:'rarp', cat:'SuperBox', term:'RARP',
+  { id:'rarp', cat:'RekitBox', term:'RARP',
     short:'Duplicate ranking: Pioneer Numbered → MIK → Raw',
     body:`<p>The hierarchy used to recommend which copy to keep when duplicate tracks are found:</p>
 <ul>
@@ -2776,15 +2776,15 @@ const GLOSSARY = [
 <li><strong>MIK (Mixed In Key tagged)</strong> — has a <code>TKEY</code>/<code>initialkey</code> tag already written by Mix In Key.</li>
 <li><strong>RAW</strong> — neither. Likely an unprocessed download.</li>
 </ul>
-<p>The CSV marks the top-ranked file in each group as KEEP. You review and make the final call — SuperBox never deletes anything.</p>`},
+<p>The CSV marks the top-ranked file in each group as KEEP. You review and make the final call — RekitBox never deletes anything.</p>`},
 
-  { id:'bak', cat:'SuperBox', term:'.bak File',
+  { id:'bak', cat:'RekitBox', term:'.bak File',
     short:'Temporary safety copy kept during audio processing',
     body:`<p>When normalizing loudness, the original file is renamed to <code>filename.mp3.bak</code> before the replacement is written.</p>
-<p>The <code>.bak</code> is only deleted after SuperBox confirms the new file is valid and readable using <code>soundfile</code>. If anything fails, your original is still there — just rename it to remove <code>.bak</code>.</p>
+<p>The <code>.bak</code> is only deleted after RekitBox confirms the new file is valid and readable using <code>soundfile</code>. If anything fails, your original is still there — just rename it to remove <code>.bak</code>.</p>
 <p>If you see leftover <code>.bak</code> files after an interrupted run, treat them as your originals. Verify the non-<code>.bak</code> version is intact before removing them.</p>`},
 
-  { id:'norm', cat:'SuperBox', term:'Normalization',
+  { id:'norm', cat:'RekitBox', term:'Normalization',
     short:'Matching loudness levels across your library',
     body:`<p>The process of analyzing each track's integrated loudness (LUFS) and re-encoding it so every track hits the same target level — <strong>−8.0 LUFS</strong>.</p>
 <p>Why it matters: without normalization, different tracks have different volumes. On CDJs you end up riding the channel gain between tracks during a mix. Normalized libraries let you keep gain at unity and focus on the mix.</p>
@@ -2800,7 +2800,7 @@ let cardZ          = 1000;
 function _buildOwlList() {
   const list = document.getElementById('owl-panel-list');
   if (list.children.length) return;
-  const groups = ['Tech','Audio','RekordBox','SuperBox'];
+  const groups = ['Tech','Audio','RekordBox','RekitBox'];
   groups.forEach(g => {
     const lbl = document.createElement('div');
     lbl.className = 'owl-group-label';

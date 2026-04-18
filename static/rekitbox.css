@@ -57,7 +57,7 @@ body::before {
   transform: translate(-50%, -50%);
   width: min(60vw, 60vh);
   height: min(60vw, 60vh);
-  background: url('/static/SRB-bg-update.png') center / contain no-repeat;
+  background: url('/static/RB-bg-update.png') center / contain no-repeat;
   opacity: 0.04;
   pointer-events: none;
   z-index: 0;
@@ -1080,7 +1080,7 @@ body.log-open #tools-panel { bottom: calc(var(--log-h) + var(--scan-bar-h) + 28p
   right: -20px;
   width: 220px;
   height: 220px;
-  background: url('/static/SRB_LOGO.png') center / contain no-repeat;
+  background: url('/static/RB_LOGO.png') center / contain no-repeat;
   opacity: 0.04;
   pointer-events: none;
   z-index: 0;
