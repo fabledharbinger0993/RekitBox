@@ -178,8 +178,12 @@
           <label class="checkbox-label">
             <input type="checkbox" id="process-no-key"> Skip key detection
           </label>
+          <label class="checkbox-label" id="process-retry-errored-row" style="display:none">
+            <input type="checkbox" id="process-retry-errored">
+            <span>Retry errored tracks only <span class="field-badge caution" id="process-retry-count"></span></span>
+          </label>
           <label class="checkbox-label">
-            <input type="checkbox" id="process-force"> Force overwrite existing tags
+            <input type="checkbox" id="process-force"> Force overwrite <em>all</em> existing tags
           </label>
         </div>
       </div>
@@ -1081,6 +1085,10 @@
     </div>
     <div class="rmod-body">
       <pre id="rmod-pre"></pre>
+    </div>
+    <div id="rmod-error-actions" class="rmod-error-actions" style="display:none">
+      <div class="rmod-ea-title">Suggested next steps</div>
+      <div id="rmod-ea-btns" class="rmod-ea-btns"></div>
     </div>
     <div class="rmod-footer">
       <button class="welcome-got-it" onclick="closeReportModal(true)">✓ Got it</button>

@@ -937,6 +937,40 @@ def process_directory(
         except Exception as exc:
             log.warning("Could not write scan index: %s", exc)
 
+    # Emit structured error summary so the UI can build actionable next steps.
+    # Emitted as REKITBOX_ERROR_SUMMARY: {json} — parsed by the JS SSE handler.
+    errored_results = [r for r in results if r.errors]
+    if errored_results:
+        def _short_err(r: ProcessResult) -> str:
+            return r.errors[0] if r.errors else "unknown error"
+
+        corrupt_list:  list[dict] = []
+        decode_list:   list[dict] = []
+        tag_list:      list[dict] = []
+        other_list:    list[dict] = []
+
+        for r in errored_results:
+            entry = {"name": r.path.name, "path": str(r.path), "error": _short_err(r)}
+            if r.quarantined:
+                corrupt_list.append(entry)
+            elif any("audio decode failed" in e for e in r.errors):
+                decode_list.append(entry)
+            elif any("tag write failed" in e or "normalisation failed" in e for e in r.errors):
+                tag_list.append(entry)
+            else:
+                other_list.append(entry)
+
+        print(
+            "REKITBOX_ERROR_SUMMARY: " + json.dumps({
+                "corrupt":       corrupt_list,
+                "decode_failed": decode_list,
+                "tag_failed":    tag_list,
+                "other":         other_list,
+                "quarantine_dir": str(quarantine_dir) if quarantine_dir else None,
+            }),
+            flush=True,
+        )
+
     return results
 
 

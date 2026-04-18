@@ -401,6 +401,46 @@ def api_process():
     return _sse_response(cmd, library_root=library_root, step_name="process")
 
 
+@app.route("/api/run/process-retry", methods=["POST"])
+def api_process_retry():
+    """
+    Re-run Tag Tracks with --force on a specific list of file paths only.
+    Body: {"paths": ["/abs/path/to/file.mp3", ...], "no_bpm": bool, "no_key": bool}
+    Uses a temp file so the CLI path-list can be arbitrarily long.
+    """
+    import tempfile
+    body = request.get_json(force=True, silent=True) or {}
+    paths = [p.strip() for p in (body.get("paths") or []) if p.strip()]
+    if not paths:
+        return jsonify({"error": "paths list is required"}), 400
+
+    # Write paths to a temp file; CLI reads it with --paths-file
+    tf = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", prefix="rekitbox_retry_",
+        delete=False, encoding="utf-8",
+    )
+    tf.write("\n".join(paths))
+    tf.close()
+
+    # PATH positional arg is required by argparse but unused in --paths-file mode;
+    # pass the directory of the first file as a harmless placeholder.
+    placeholder_root = str(Path(paths[0]).parent)
+    cmd = [
+        sys.executable, str(CLI_PATH),
+        "process", placeholder_root,
+        "--no-normalize",
+        "--force",
+        "--paths-file", tf.name,
+    ]
+    if body.get("no_bpm"):
+        cmd.append("--no-bpm")
+    if body.get("no_key"):
+        cmd.append("--no-key")
+
+    library_root = str(Path(paths[0]).parent)
+    return _sse_response(cmd, library_root=library_root, step_name="process")
+
+
 @app.route("/api/run/pipeline", methods=["POST"])
 def api_pipeline():
     """

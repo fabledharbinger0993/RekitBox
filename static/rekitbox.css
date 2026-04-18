@@ -2128,6 +2128,66 @@ body.log-open #fb-panel { bottom: calc(var(--log-h) + var(--scan-bar-h) + 4px); 
   position: relative; z-index: 1;
 }
 
+/* ── Report modal: error actions panel ──────────────────────────────────────── */
+.rmod-error-actions {
+  border-top: 1px solid var(--border-hi);
+  background: rgba(255,102,0,.04);
+  padding: 14px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.rmod-ea-title {
+  font-size: .68rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.rmod-ea-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rmod-ea-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 7px;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid;
+  background: none;
+  transition: background .15s, box-shadow .15s;
+}
+.rmod-ea-btn.quarantine {
+  border-color: var(--safe);
+  color: var(--safe);
+}
+.rmod-ea-btn.quarantine:hover {
+  background: rgba(52,211,153,.08);
+  box-shadow: 0 0 8px rgba(52,211,153,.2);
+}
+.rmod-ea-btn.retry {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.rmod-ea-btn.retry:hover {
+  background: var(--accent-dim);
+  box-shadow: 0 0 8px rgba(255,102,0,.2);
+}
+.rmod-ea-btn.convert {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.rmod-ea-btn.convert:hover {
+  background: var(--accent2-dim);
+  box-shadow: 0 0 8px rgba(123,47,255,.2);
+}
+
 /* ══ Pipeline button (in tools panel) ════════════════════════════════════════ */
 /* log-open shift handled in the consolidated block above */
 

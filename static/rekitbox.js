@@ -174,11 +174,73 @@ function openReportModal(title, text, reportPath) {
     pathEl.style.display = '';
   }
   document.getElementById('rmod-pre').textContent = text;
+  _populateErrorActions(title);
   sessionReports[title] = { text, reportPath, ts: Date.now() };
   _sbFadeBd('report-modal-backdrop', true);
   const box = document.getElementById('report-modal');
   void box.offsetWidth;
   _sbAnim(box, 'sb-modal-in', '.28s');
+}
+
+function _populateErrorActions(scanTitle) {
+  const s = _lastErrorSummary;
+  const wrap = document.getElementById('rmod-error-actions');
+  const btns = document.getElementById('rmod-ea-btns');
+  if (!wrap || !btns) return;
+  btns.innerHTML = '';
+  let hasAny = false;
+
+  // Open Quarantine folder
+  if (s && s.corrupt && s.corrupt.length > 0 && s.quarantine_dir) {
+    hasAny = true;
+    const b = document.createElement('button');
+    b.className = 'rmod-ea-btn quarantine';
+    b.textContent = `Open Quarantine (${s.corrupt.length} file${s.corrupt.length === 1 ? '' : 's'})`;
+    b.onclick = () => fetch(`/api/open-file?path=${encodeURIComponent(s.quarantine_dir)}`);
+    btns.appendChild(b);
+  }
+
+  // Retry with force — only tag-write and other failures (not decode failures, those need conversion)
+  const retryable = [
+    ...((s && s.tag_failed) || []),
+    ...((s && s.other)      || []),
+  ];
+  if (retryable.length > 0) {
+    hasAny = true;
+    const retryPaths = retryable.map(f => f.path).filter(Boolean);
+    const b = document.createElement('button');
+    b.className = 'rmod-ea-btn retry';
+    b.textContent = `Retry ${retryPaths.length} failed track${retryPaths.length === 1 ? '' : 's'} with Force`;
+    b.onclick = () => {
+      closeReportModal(false);
+      _runProcessRetry({
+        paths:  retryPaths,
+        no_bpm: document.getElementById('process-no-bpm')?.checked || false,
+        no_key: document.getElementById('process-no-key')?.checked  || false,
+      });
+    };
+    btns.appendChild(b);
+  }
+
+  // Convert hint — decode failures need to be converted first
+  if (s && s.decode_failed && s.decode_failed.length > 0) {
+    hasAny = true;
+    const b = document.createElement('button');
+    b.className = 'rmod-ea-btn convert';
+    b.textContent = `${s.decode_failed.length} need conversion first — open Convert tool`;
+    b.onclick = () => {
+      closeReportModal(false);
+      document.getElementById('step-convert')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const parents = [...new Set(s.decode_failed.map(f => {
+        const parts = (f.path || '').split('/'); parts.pop(); return parts.join('/');
+      }).filter(Boolean))];
+      parents.forEach(p => addFolderPill('convert-pills', p));
+    };
+    btns.appendChild(b);
+  }
+
+  wrap.style.display = hasAny ? 'flex' : 'none';
+  // Don't clear _lastErrorSummary here — still needed if user re-opens the card
 }
 
 function closeReportModal(shrinkToPill) {
@@ -1057,6 +1119,11 @@ function runCommand(url, logTitle, onDone, useBar = true, showPrefilter = false)
         }
         return;
       }
+      // Error summary — stash for report modal actions + retry option on card
+      if (line.startsWith('REKITBOX_ERROR_SUMMARY: ')) {
+        try { _lastErrorSummary = JSON.parse(line.slice(24)); _showRetryOption(); } catch(_) {}
+        return;
+      }
       // Pre-filter summary — show in log as info line
       if (line.startsWith('REKITBOX_PREFILTER: ')) {
         if (showPrefilter) {
@@ -1144,10 +1211,59 @@ function setAllButtons(disabled) {
   document.querySelectorAll('.btn').forEach(b => b.disabled = disabled);
 }
 
+// ── Error summary from last Tag Tracks / Normalize run ──────────────────────
+let _lastErrorSummary = null;   // populated by REKITBOX_ERROR_SUMMARY line
+
+function _retryErroredCount() {
+  if (!_lastErrorSummary) return 0;
+  return (
+    (_lastErrorSummary.decode_failed  || []).length +
+    (_lastErrorSummary.tag_failed     || []).length +
+    (_lastErrorSummary.other          || []).length
+  );
+}
+
+function _showRetryOption() {
+  const n = _retryErroredCount();
+  const row = document.getElementById('process-retry-errored-row');
+  const badge = document.getElementById('process-retry-count');
+  if (!row) return;
+  if (n > 0) {
+    row.style.display = '';
+    if (badge) badge.textContent = `${n} from last run`;
+  } else {
+    row.style.display = 'none';
+    const cb = document.getElementById('process-retry-errored');
+    if (cb) cb.checked = false;
+  }
+}
+
 /* ── Individual command runners ────────────────────────────────────────────── */
 function runProcess() {
   const paths = getFolderPaths('process-pills');
   if (!paths.length) { alert('Add at least one music folder first.'); return; }
+
+  // Retry-errored mode: POST the specific file list, force=true, no directory scan
+  const retryOnly = document.getElementById('process-retry-errored')?.checked;
+  if (retryOnly && _lastErrorSummary) {
+    const retryPaths = [
+      ...(_lastErrorSummary.decode_failed  || []).map(e => e.path),
+      ...(_lastErrorSummary.tag_failed     || []).map(e => e.path),
+      ...(_lastErrorSummary.other          || []).map(e => e.path),
+    ].filter(Boolean);
+    if (!retryPaths.length) {
+      alert('No retryable errored tracks found from the last run.');
+      return;
+    }
+    const body = {
+      paths:  retryPaths,
+      no_bpm: document.getElementById('process-no-bpm').checked,
+      no_key: document.getElementById('process-no-key').checked,
+    };
+    _runProcessRetry(body);
+    return;
+  }
+
   const p = new URLSearchParams();
   paths.forEach(path => p.append('path', path));
   if (document.getElementById('process-no-bpm').checked)  p.set('no_bpm', '1');
@@ -1158,6 +1274,73 @@ function runProcess() {
   const el = document.getElementById('process-result');
   if (el) el.classList.add('hidden');
   runCommand(`/api/run/process?${p}`, 'Tag Tracks — BPM & Key Detection', null, true, false);
+}
+
+function _runProcessRetry(body) {
+  const label = `Tag Tracks — Retry ${body.paths.length} errored track${body.paths.length === 1 ? '' : 's'}`;
+  if (isRunning) return;
+  initLog(label);
+  showScanBar(label);
+  isRunning = true;
+  setSpinner(true);
+  setAllButtons(true);
+  appendLog(`▸ ${label}`, 'dim');
+  appendLog('', 'dim');
+
+  let reportBuffer = [];
+  let inReport = false;
+  let capturedReportPath = null;
+
+  fetch('/api/run/process-retry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(resp => {
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    function pump() {
+      return reader.read().then(({ done, value }) => {
+        if (value) buf += decoder.decode(value, { stream: true });
+        const events = buf.split('\n\n');
+        buf = events.pop();
+        for (const evt of events) {
+          const dataLine = evt.split('\n').find(l => l.startsWith('data: '));
+          if (!dataLine) continue;
+          let data;
+          try { data = JSON.parse(dataLine.slice(6)); } catch(_) { continue; }
+          if (data.line !== undefined) {
+            const line = data.line;
+            if (line === 'REKITBOX_REPORT_BEGIN') { inReport = true; reportBuffer = []; continue; }
+            if (line === 'REKITBOX_REPORT_END')   { inReport = false; continue; }
+            if (inReport) { reportBuffer.push(line); continue; }
+            if (line.startsWith('REKITBOX_REPORT_PATH: '))  { capturedReportPath = line.slice(22).trim(); continue; }
+            if (line.startsWith('REKITBOX_PROGRESS: '))     { try { updateScanBar(JSON.parse(line.slice(19))); } catch(_){} continue; }
+            if (line.startsWith('REKITBOX_ERROR_SUMMARY: ')) { try { _lastErrorSummary = JSON.parse(line.slice(24)); _showRetryOption(); } catch(_){} continue; }
+            appendLog(line, classifyLine(line));
+          }
+          if (data.done) {
+            isRunning = false; setSpinner(false); setAllButtons(false); finishScanBar();
+            appendLog('');
+            appendLog(data.exit_code === 0 ? '✓ Finished successfully' : `✗ Exited with code ${data.exit_code}`,
+                      data.exit_code === 0 ? 'log-exit-ok' : 'log-exit-fail');
+            if (reportBuffer.length > 0) {
+              const txt = reportBuffer.join('\n');
+              if (data.exit_code === 0) openReportModal(label, txt, capturedReportPath);
+              else sessionReports[label] = { text: txt, reportPath: capturedReportPath };
+            }
+          }
+        }
+        if (!done) return pump();
+      });
+    }
+    return pump();
+  }).catch(err => {
+    isRunning = false; setSpinner(false); setAllButtons(false); finishScanBar();
+    appendLog(`[Connection error] ${err.message}`, 'error');
+  });
 }
 
 function runNormalize() {
