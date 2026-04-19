@@ -48,6 +48,7 @@ log = logging.getLogger(__name__)
 _PN_SUFFIX = re.compile(r'_?PN\s*\d*$', re.IGNORECASE)  # "Something_PN" or "SomethingPN2"
 _ID_PREFIX = re.compile(r'^\d{6,}\s*[-_.]')             # "918223_Title" or "918223-Title"
 _ID_SUFFIX = re.compile(r'[-_\.]\d{6,}$')               # "Title_918223" or "Title-918223"
+_UNDERSCORE = re.compile(r'_')                          # Underscores (replaced with spaces)
 _MULTI_SPACE = re.compile(r'\s{2,}')                    # Multiple spaces
 _UNSAFE_CHARS = re.compile(r'[\\/:*?"<>|]')             # Filesystem-unsafe
 _VERSION_MARKERS = re.compile(
@@ -94,6 +95,9 @@ def _extract_artist_title(path: Path, metadata) -> tuple[str | None, str | None]
     
     # Strip numeric suffixes: "Title_918223" or "Title-918223"
     stem = _ID_SUFFIX.sub('', stem).strip()
+    
+    # Replace underscores with spaces (they're filename separators, not part of title)
+    stem = _UNDERSCORE.sub(' ', stem).strip()
     
     # Parse "Artist - Title" from filename if it exists and we're missing either field
     if ' - ' in stem and (not artist or not title):
