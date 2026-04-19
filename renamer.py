@@ -2,14 +2,15 @@
 rekordbox-toolkit / renamer.py
 
 Batch-renames audio files in a directory based on their ID3/Vorbis tags,
-generating clean filenames from track titles only: "Title.ext"
+generating clean filenames with smart artist prioritization.
 
 This tool extracts metadata (artist, title) from tags and replaces
 underscores, numbers, and processing suffixes with a standardized format.
-Artist information is kept in the ID3 tags for database searchability.
+All metadata remains in the ID3 tags for database searchability.
 
 Design:
   - Reads metadata via mutagen (same as scanner.py)
+  - Artist priority: vocal/lead (TPE1) > album artist/band (TPE2) > fallback
   - Generates clean filenames: "{Artist}: {Title}.{ext}"
   - Falls back to original filename if title missing
   - Handles collisions: if "Title.mp3" exists, uses "_1" suffix
@@ -22,8 +23,16 @@ Supported naming patterns (detected and cleaned):
   - "918223_SomethingElse.mp3" → extracts title, removes ID prefix
   - "Something_918223.mp3" → extracts title, removes ID suffix
   - "Track (remix).mp3" or "Track (dub).mp3" → preserves remix/version markers
-  - Standard "Artist - Title.mp3" → extracted as "Artist: Title" if tags missing
+  - Remixes: Uses original artist, preserves remixer in title marker
+    E.g., "Donna Summer: On the Radio (Felix da-Housecat remix)"
+  - Standard "Artist - Title.mp3" → extracted with artist prioritization
   - Anything else → fallback to original name
+
+Artist Priority Examples:
+  - If both vocal artist (TPE1) and album artist (TPE2) exist → uses vocal artist
+  - If only album artist exists → uses band name
+  - If only producer/release artist exists → uses producer name
+  - If nothing in tags → tries filename parsing
 """
 
 import json
@@ -57,6 +66,55 @@ _VERSION_MARKERS = re.compile(
 )                                                        # Version/remix markers to preserve
 
 
+def _get_prioritized_artist(path: Path) -> str | None:
+    """
+    Read artist tags from the file and return the highest-priority artist.
+    
+    Priority order (use first available):
+    1. TPE1 (Lead/Vocal artist) — the vocalist or primary performer
+    2. TPE2 (Album artist/Band) — the band or ensemble name
+    3. Fall back to None
+    
+    For remixes: Returns the original artist, not the remixer.
+    E.g., "Donna Summer" (not "Felix da Housecat") for a remix.
+    
+    Returns: Cleaned artist string or None.
+    """
+    try:
+        mf = MutagenFile(path)
+        if not mf or not mf.tags:
+            return None
+        
+        tags = mf.tags
+        
+        # ID3 tags (MP3, AIFF, WAV with ID3)
+        if isinstance(tags, ID3):
+            # TPE1: Lead/Vocal artist
+            tpe1 = tags.get('TPE1')
+            if tpe1 and str(tpe1).strip():
+                return str(tpe1).strip()
+            # TPE2: Album artist (band, ensemble)
+            tpe2 = tags.get('TPE2')
+            if tpe2 and str(tpe2).strip():
+                return str(tpe2).strip()
+        
+        # Vorbis comments (FLAC, OGG, Opus)
+        elif hasattr(tags, 'get'):
+            # Vorbis ARTIST (vocalist/lead)
+            artist = tags.get('artist')
+            if artist and isinstance(artist, list) and artist[0].strip():
+                return artist[0].strip()
+            # Vorbis ALBUMARTIST (band/ensemble)
+            album_artist = tags.get('albumartist')
+            if album_artist and isinstance(album_artist, list) and album_artist[0].strip():
+                return album_artist[0].strip()
+        
+        return None
+    except Exception as e:
+        log.debug(f"Could not read artist tags from {path}: {e}")
+        return None
+
+
 @dataclass
 class RenameResult:
     """Outcome of a single file rename."""
@@ -72,12 +130,19 @@ def _extract_artist_title(path: Path, metadata) -> tuple[str | None, str | None]
     Best-effort extraction of artist and title from metadata.
     Prefers tag fields, falls back to filename parsing.
     
-    Preserves version markers like (remix), (dub), (extended), etc. in the title.
+    Artist priority: vocal artist (TPE1) > album artist (TPE2) > fallback
+    Title: extracted from tags or filename, preserves remix/version markers.
     Removes only filler: PN suffixes, numeric prefixes/suffixes, underscores.
     
     Returns: (artist, title) or (None, None) if unable to extract.
     """
-    artist = metadata.artist or None
+    # Try to get artist from tags with priority (vocalist > band > producer)
+    artist = _get_prioritized_artist(path)
+    
+    # Fallback to scanner's metadata.artist if prioritized method returned nothing
+    if not artist:
+        artist = metadata.artist or None
+    
     title = metadata.title or None
     
     # Both found in tags — use them (preserves remix/dub markers if in tag)
