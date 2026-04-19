@@ -12,6 +12,8 @@ Commands:
     duplicates  Find acoustically identical files via Chromaprint
     process     Detect BPM/key and normalise loudness on audio files
     organize    Consolidate files into Artist / Album / Track hierarchy
+    rename      Rename files to clean titles based on metadata
+    convert     Convert audio files to a target format
 
 All write commands enforce:
   - Rekordbox not running (via write_db())
@@ -1231,6 +1233,74 @@ def cmd_novelty(args: argparse.Namespace) -> None:
         log.warning("%d files had errors — check log above", errors)
 
 
+def cmd_rename(args: argparse.Namespace) -> None:
+    """Rename audio files based on their ID3/tag metadata to clean filenames."""
+    from renamer import rename_directory
+
+    root = Path(args.path)
+
+    if not root.is_dir():
+        log.error("PATH is not a directory: %s", root)
+        sys.exit(1)
+
+    dry_run     = not args.no_dry_run
+    max_workers = max(1, getattr(args, "workers", 1))
+
+    if dry_run:
+        log.info("DRY RUN — no files will be renamed. Pass --no-dry-run to execute.")
+
+    log.info(
+        "Renaming audio files under %s  dry_run=%s  workers=%d",
+        root, dry_run, max_workers,
+    )
+
+    try:
+        results = rename_directory(root, db=None, dry_run=dry_run, max_workers=max_workers)
+    except Exception:
+        log.exception("Rename failed")
+        sys.exit(1)
+
+    total = len(results)
+    renamed = sum(1 for r in results if r.action == "renamed")
+    skipped = sum(1 for r in results if r.action == "no_change")
+    collisions = sum(1 for r in results if r.action == "collision_numbered")
+    errors = sum(1 for r in results if r.action == "error")
+
+    if dry_run:
+        lines = [
+            "Here's what would change.",
+            "",
+            f"{total} audio files scanned.",
+        ]
+        if renamed:
+            lines.append(f"  {renamed} files would be renamed to clean titles.")
+        if skipped:
+            lines.append(f"  {skipped} already have clean names — would be left alone.")
+        if collisions:
+            lines.append(f"  {collisions} would get numbered suffixes to avoid clashes (e.g. title_1.mp3).")
+        if errors:
+            lines.append(f"  {errors} had errors — check the log above.")
+        lines += ["", "Nothing has been renamed. Uncheck \"Dry Run\" and run again to execute."]
+    else:
+        lines = ["Done renaming.", ""]
+        if renamed:
+            lines.append(f"{renamed} files were renamed to clean titles (artist kept in tags).")
+        if skipped:
+            lines.append(f"{skipped} already had clean names — left alone.")
+        if collisions:
+            lines.append(f"{collisions} name clashes were handled by numbering (e.g. title_1.mp3).")
+        if errors:
+            lines.append(f"{errors} files had errors — check the log above.")
+        else:
+            lines.append("No errors.")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _emit_report("\n".join(lines), "Rename", f"rename_{timestamp}.txt")
+
+    if errors > 0:
+        log.warning("%d files had errors — check log above", errors)
+
+
 # ─── Argument parser ──────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1250,6 +1320,8 @@ Examples:
   python3 cli.py process "/Volumes/DJMT/DJMT PRIMARY" --dry-run --no-bpm --no-key
   python3 cli.py convert "/Volumes/DJMT/DJMT PRIMARY" mp3
   python3 cli.py convert "/Volumes/DJMT/DJMT PRIMARY" flac
+  python3 cli.py rename "/Volumes/DJMT/DJMT PRIMARY" --dry-run
+  python3 cli.py rename "/Volumes/DJMT/DJMT PRIMARY"
         """,
     )
     parser.add_argument(
@@ -1551,6 +1623,31 @@ Examples:
         help="Additional source directory (can be repeated)",
     )
     p_novelty.set_defaults(func=cmd_novelty)
+
+    # ── rename ──
+    p_rename = sub.add_parser(
+        "rename",
+        help="Rename audio files to clean titles based on ID3/tag metadata"
+    )
+    p_rename.add_argument(
+        "path",
+        metavar="PATH",
+        help="Directory to scan and rename files"
+    )
+    p_rename.add_argument(
+        "--no-dry-run",
+        action="store_true",
+        default=False,
+        help="Actually rename files. Default is dry-run (preview only).",
+    )
+    p_rename.add_argument(
+        "--workers", "-w",
+        metavar="N",
+        type=int,
+        default=1,
+        help="Parallel workers (default: 1)",
+    )
+    p_rename.set_defaults(func=cmd_rename)
 
     return parser
 
