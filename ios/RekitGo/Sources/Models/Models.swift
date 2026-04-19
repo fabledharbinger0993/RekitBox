@@ -3,14 +3,35 @@ import Foundation
 // MARK: - Server connection
 
 struct ServerConfig: Codable {
+    private static let minPort = 1
+    private static let maxPort = 65535
+
     var host: String        // e.g. "100.94.x.x" (Tailscale) or LAN IP
     var port: Int = 5001
     var token: String
 
-    /// Returns nil when host is empty (before the user has configured the app).
+    private var normalizedHost: String? {
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else { return nil }
+
+        if trimmedHost.hasPrefix("[") && trimmedHost.hasSuffix("]") {
+            let start = trimmedHost.index(after: trimmedHost.startIndex)
+            let end = trimmedHost.index(before: trimmedHost.endIndex)
+            let unbracketedHost = String(trimmedHost[start..<end])
+            return unbracketedHost.isEmpty ? nil : unbracketedHost
+        }
+
+        return trimmedHost
+    }
+
     var baseURL: URL? {
-        guard !host.isEmpty else { return nil }
-        return URL(string: "http://\(host):\(port)")
+        guard let normalizedHost, (Self.minPort...Self.maxPort).contains(port) else { return nil }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = normalizedHost
+        components.port = port
+        return components.url
     }
 }
 
@@ -76,13 +97,6 @@ struct DownloadJob: Identifiable, Codable {
 
 enum DownloadStatus: String, Codable {
     case queued, downloading, converting, importing, done, failed
-    /// Fallback for any future status strings added server-side.
-    case unknown
-
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = DownloadStatus(rawValue: raw) ?? .unknown
-    }
 }
 
 // MARK: - Analysis job
