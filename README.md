@@ -100,7 +100,9 @@ If RekitGo eventually needs an independent release cadence, separate contributor
 
 This repo now supports optional local auto-sync to GitHub when opened in VS Code:
 
-- On folder open, VS Code runs a background watcher that auto-commits and auto-pushes local file changes.
+- On folder open, VS Code starts a managed autosync daemon (`scripts/autosync.sh start`).
+- Autosync only runs on allowed branches (default: `main`) and skips while git is mid-merge/rebase/cherry-pick.
+- Before pushing, autosync fetches/rebases to avoid push-loop conflicts.
 - Releases remain manual. Nothing in auto-sync creates tags or releases.
 - Published releases always get `RekitBox.zip` attached automatically via `.github/workflows/release-zip.yml`.
 
@@ -119,11 +121,31 @@ Run a single autosync cycle immediately:
 ./scripts/autosync.sh once
 ```
 
-Run autosync in terminal (same loop VS Code runs automatically on folder-open):
+Start autosync daemon:
 
 ```bash
-AUTOSYNC_INTERVAL=5 ./scripts/autosync.sh watch
+./scripts/autosync.sh start
 ```
+
+Check autosync daemon status:
+
+```bash
+./scripts/autosync.sh status
+```
+
+Stop autosync daemon:
+
+```bash
+./scripts/autosync.sh stop
+```
+
+Run autosync in foreground (debug mode):
+
+```bash
+AUTOSYNC_INTERVAL=5 AUTOSYNC_BRANCHES=main ./scripts/autosync.sh watch
+```
+
+Autosync state/logs are stored in `.git/autosync/`.
 
 ### Release command (manual only)
 
@@ -138,6 +160,14 @@ Create a release with a notes file:
 ```bash
 ./scripts/release.sh v2.0.13 .github/release-notes.md
 ```
+
+`scripts/release.sh` now enforces safe release preconditions:
+
+- clean working tree
+- current branch matches release branch (default `main`)
+- local `main` matches `origin/main`
+- tag format validation (`vX.Y.Z`)
+- waits until `RekitBox.zip` is confirmed attached (or fails on timeout)
 
 ---
 
