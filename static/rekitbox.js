@@ -2704,24 +2704,30 @@ async function runRenameWithPreflight(path) {
     return;
   }
 
-  openRenamePreflightModal(path, data);
+  openRenamePreflightModal(path, data, { executeRenameAfterApply: true, source: 'rename' });
 }
 
-function openRenamePreflightModal(path, data) {
+function openRenamePreflightModal(path, data, options = {}) {
   renamePreflightState = {
     path,
     candidates: Array.isArray(data.candidates) ? data.candidates : [],
     sampleSize: data.sample_size || 100,
     topN: data.top_n || 5,
+    executeRenameAfterApply: Boolean(options.executeRenameAfterApply),
+    source: options.source || 'probe',
   };
 
   const subtitle = document.getElementById('rename-learn-subtitle');
   const summary = document.getElementById('rename-learn-summary');
   const list = document.getElementById('rename-learn-list');
-  if (!subtitle || !summary || !list) return;
+  const applyBtn = document.getElementById('rename-learn-apply-btn');
+  if (!subtitle || !summary || !list || !applyBtn) return;
 
   subtitle.textContent = `${renamePreflightState.topN} most ambiguous files from a stratified sample of ${renamePreflightState.sampleSize} tracks`;
-  summary.textContent = 'Before a live rename, RekitBox pauses on the riskiest filenames. You can confirm the exact filename for this file, teach a producer-attribution casing fix such as Ken@Work, or move truly unidentified tracks into the sibling “No-Name tracks for Tagging” folder. Confirmed-good filenames also feed the known artist and producer dictionaries for future runs.';
+  summary.textContent = renamePreflightState.executeRenameAfterApply
+    ? 'Before a live rename, RekitBox pauses on the riskiest filenames. You can confirm the exact filename for this file, teach a producer-attribution casing fix such as Ken@Work, or move truly unidentified tracks into the sibling “No-Name tracks for Tagging” folder. Confirmed-good filenames also feed the known artist and producer dictionaries for future runs.'
+    : 'Use this probe to approve or correct the most ambiguous filenames before a full rename run. If the suggested filename is already right, leave it in place and apply it. Confirmed-good filenames feed the known artist and producer dictionaries for future runs.';
+  applyBtn.textContent = renamePreflightState.executeRenameAfterApply ? 'Apply Decisions + Rename' : 'Apply Decisions';
   list.innerHTML = '';
 
   renamePreflightState.candidates.forEach((candidate, index) => {
@@ -2837,8 +2843,23 @@ async function applyRenamePreflightAndRun() {
   }
 
   const path = renamePreflightState.path;
+  const executeRenameAfterApply = renamePreflightState.executeRenameAfterApply;
   closeRenamePreflightModal();
-  _executeRename(path, false);
+  if (executeRenameAfterApply) {
+    _executeRename(path, false);
+    return;
+  }
+
+  openReportModal(
+    'Rename Probe — Decisions Saved',
+    [
+      `Saved decisions for ${entries.length} probe item${entries.length === 1 ? '' : 's'}.`,
+      '',
+      'The rename tool will use those exact decisions on the next full run.',
+      'Run Clean File Names with Dry Run off when you want to execute the rename pass.',
+    ].join('\n'),
+    null,
+  );
 }
 
 function escapeHtml(text) {
@@ -2879,26 +2900,22 @@ async function runRenameProbe() {
     return;
   }
 
-  const lines = [];
-  lines.push(`Probe sample: ${data.sample_size} files`);
-  lines.push(`Top candidates shown: ${data.top_n}`);
-  lines.push('');
-
   if (!data.candidates || data.candidates.length === 0) {
-    lines.push('No probe candidates found.');
-    lines.push('This usually means the current parser already looks confident across the sampled files.');
-  } else {
-    data.candidates.forEach((candidate, index) => {
-      lines.push(`${index + 1}. ${candidate.source_name}`);
-      lines.push(`   proposed → ${candidate.proposed_filename}`);
-      if (candidate.reasons && candidate.reasons.length) {
-        lines.push(`   why      → ${candidate.reasons.join(', ')}`);
-      }
-      lines.push('');
-    });
+    openReportModal(
+      'Rename Probe — Most Ambiguous',
+      [
+        `Probe sample: ${data.sample_size} files`,
+        `Top candidates shown: ${data.top_n}`,
+        '',
+        'No probe candidates found.',
+        'This usually means the current parser already looks confident across the sampled files.',
+      ].join('\n'),
+      null,
+    );
+    return;
   }
 
-  openReportModal('Rename Probe — Most Ambiguous', lines.join('\n'), null);
+  openRenamePreflightModal(paths[0], data, { executeRenameAfterApply: false, source: 'probe' });
 }
 
 /* ── Prune Duplicates ──────────────────────────────────────────────────────── */

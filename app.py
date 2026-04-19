@@ -173,9 +173,6 @@ def _release_info() -> dict:
     }
 
 
-_CACHED_RELEASE_INFO = _release_info()
-
-
 def _subprocess_env() -> dict:
     """Return an environment dict for subprocesses running cli.py."""
     return os.environ.copy()
@@ -357,7 +354,7 @@ def api_status():
     return jsonify({
         "rb_running": _rb_is_running(),
         "backup": _backup_info(),
-        "release": _CACHED_RELEASE_INFO,
+        "release": _release_info(),
     })
 
 
