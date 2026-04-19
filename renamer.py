@@ -74,6 +74,29 @@ _VERSION_MARKERS = re.compile(
 )                                                        # Version/remix markers to preserve
 
 
+def _strip_leading_artist_from_title(artist: str, title: str) -> str:
+    """
+    If title already starts with the same artist text, strip that prefix.
+
+    Examples:
+      "Jamiroquai - Too Young to Die" -> "Too Young to Die"
+      "Jamiroquai: Too Young to Die" -> "Too Young to Die"
+      "Jamiroquai Too Young to Die"  -> "Too Young to Die"
+    """
+    a_raw = _MULTI_SPACE.sub(" ", artist).strip()
+    t = _MULTI_SPACE.sub(" ", title).strip()
+    if not a_raw or not t:
+        return title
+
+    m = re.match(rf"^{re.escape(a_raw)}(?P<rest>.*)$", t, flags=re.IGNORECASE)
+    if not m:
+        return title
+
+    # Remove the artist prefix and then trim common separators.
+    remainder = (m.group("rest") or "").lstrip(" -_:;|/\\\t")
+    return remainder if remainder else title
+
+
 def _get_prioritized_artist(path: Path) -> str | None:
     """
     Read artist tags from the file and return the highest-priority artist.
@@ -219,6 +242,7 @@ def _generate_filename(artist: str | None, title: str | None, ext: str, copy_suf
     """
     artist = _sanitize_filename(artist or "Unknown")
     title = _sanitize_filename(title or "Unknown")
+    title = _strip_leading_artist_from_title(artist, title)
     suffix_str = f" {copy_suffix}" if copy_suffix else ""
     return f"{artist}: {title}{suffix_str}{ext}"
 
