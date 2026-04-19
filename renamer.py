@@ -75,24 +75,39 @@ _VERSION_MARKERS = re.compile(
 
 
 def _normalize_artist_text(raw: str | None) -> str | None:
-    """Normalize and de-duplicate obvious repeated artist strings."""
+    """Normalize and de-duplicate repeated artist strings."""
     if not raw:
         return None
     s = _MULTI_SPACE.sub(" ", str(raw)).strip()
     if not s:
         return None
 
-    # Collapse exact doubled strings, e.g. "Diana Ross Diana Ross".
-    m = re.match(r'^(?P<a>.+?)\s+(?P=a)$', s, flags=re.IGNORECASE)
-    if m:
-        s = m.group("a").strip()
+    # Normalize separators so repeated chunks are easier to detect.
+    s = re.sub(r'\s*[/|;,]+\s*', ' ', s)
+    s = _MULTI_SPACE.sub(" ", s).strip()
 
-    # Collapse duplicated tokens separated by delimiters, e.g. "Diana Ross / Diana Ross".
-    m = re.match(r'^(?P<a>.+?)\s*[/|;,]+\s*(?P=a)$', s, flags=re.IGNORECASE)
-    if m:
-        s = m.group("a").strip()
+    # Collapse repeated token sequences of any length:
+    #   "Gayle Adams Gayle Adams" -> "Gayle Adams"
+    #   "DJ PP Jack Mood DJ PP Jack Mood DJ PP Jack Mood" -> "DJ PP Jack Mood"
+    tokens = s.split()
+    n = len(tokens)
+    for unit_len in range(1, (n // 2) + 1):
+        if n % unit_len != 0:
+            continue
+        unit = tokens[:unit_len]
+        repeats = n // unit_len
+        if repeats > 1 and unit * repeats == tokens:
+            s = " ".join(unit)
+            break
 
     return s or None
+
+
+def _canon(s: str) -> str:
+    """Case/spacing/punctuation-insensitive string form for comparisons."""
+    s = s.casefold()
+    s = re.sub(r'[^a-z0-9]+', '', s)
+    return s
 
 
 def _strip_leading_artist_from_title(artist: str, title: str) -> str:
@@ -104,17 +119,28 @@ def _strip_leading_artist_from_title(artist: str, title: str) -> str:
       "Jamiroquai: Too Young to Die" -> "Too Young to Die"
       "Jamiroquai Too Young to Die"  -> "Too Young to Die"
     """
-    a_raw = _MULTI_SPACE.sub(" ", artist).strip()
+    a_raw = _normalize_artist_text(artist) or _MULTI_SPACE.sub(" ", artist).strip()
     t = _MULTI_SPACE.sub(" ", title).strip()
     if not a_raw or not t:
         return title
 
-    m = re.match(rf"^{re.escape(a_raw)}(?P<rest>.*)$", t, flags=re.IGNORECASE)
-    if not m:
-        return title
+    # Remove repeated leading artist chunks (with optional separators) until clear.
+    remainder = t
+    while True:
+        m = re.match(rf"^\s*{re.escape(a_raw)}\s*(?:[-_:;|/\\]+\s*)?(?P<rest>.*)$", remainder, flags=re.IGNORECASE)
+        if not m:
+            break
+        nxt = (m.group("rest") or "").strip()
+        if not nxt or _canon(nxt) == _canon(remainder):
+            break
+        remainder = nxt
 
-    # Remove the artist prefix and then trim common separators.
-    remainder = (m.group("rest") or "").lstrip(" -_:;|/\\\t")
+    # Also handle title forms like "Artist Artist - Title" where canonical prefix matches.
+    if _canon(remainder).startswith(_canon(a_raw)):
+        m2 = re.match(rf"^\s*{re.escape(a_raw)}\b\s*(?P<rest>.*)$", remainder, flags=re.IGNORECASE)
+        if m2:
+            remainder = (m2.group("rest") or "").lstrip(" -_:;|/\\\t")
+
     return remainder if remainder else title
 
 
