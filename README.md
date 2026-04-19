@@ -1,13 +1,10 @@
-<div align="center">
-  <br>
-  <p><strong>A free, open-source rekordbox library toolkit for DJs with large, mature libraries.</strong></p>
-  <br>
+# RekitBox
 
-  [![Download](https://img.shields.io/github/v/release/fabledharbinger0993/RekitBox?label=Download%20RekitBox&style=for-the-badge&color=6d28d9&logo=apple&logoColor=white)](https://github.com/fabledharbinger0993/RekitBox/releases/latest)
+**A free, open-source rekordbox library toolkit for DJs with large, mature libraries.**
 
-  <br>
-  <sub>macOS · Free · No account required · Rekordbox must be closed for write operations</sub>
-</div>
+[![Download](https://img.shields.io/github/v/release/fabledharbinger0993/RekitBox?label=Download%20RekitBox&style=for-the-badge&color=6d28d9&logo=apple&logoColor=white)](https://github.com/fabledharbinger0993/RekitBox/releases/latest)
+
+macOS · Free · No account required · Rekordbox must be closed for write operations
 
 ---
 
@@ -21,13 +18,13 @@
 
 > **First launch** opens a Terminal window and automatically installs everything needed — Homebrew, `ffmpeg`, `chromaprint`, and all Python packages. This runs once and takes a few minutes. After that RekitBox opens as a **standalone native window** — no browser required.
 
-> **"RekitBox is damaged" or "cannot be opened"?** This is macOS Gatekeeper — it blocks apps that aren't signed with an Apple Developer certificate. To allow it:
-> 1. Right-click `RekitBox.app` → **Open** → **Open Anyway** in the dialog that appears
->
-> Or via System Settings:
-> 1. Go to **System Settings → Privacy & Security**
-> 2. Scroll down — you'll see *"RekitBox was blocked from use"*
-> 3. Click **Open Anyway**
+**"RekitBox is damaged" or "cannot be opened"?**
+This is macOS Gatekeeper — it blocks apps that aren't signed with an Apple Developer certificate.
+
+To allow it, do one of these:
+
+1. Right-click `RekitBox.app` → **Open** → **Open Anyway** in the dialog that appears.
+2. Go to **System Settings → Privacy & Security**, scroll down until you see *"RekitBox was blocked from use"*, then click **Open Anyway**.
 
 ---
 
@@ -37,8 +34,8 @@ RekitBox fills the gaps Rekordbox leaves open. It reads and writes the Rekordbox
 
 ### Core pipeline — run in order
 
-| | Tool | What it does |
-|--|------|-------------|
+| Icon | Tool | What it does |
+| --- | --- | --- |
 | ▣ | **Library Audit** | Two-pass audit: cross-checks the Rekordbox database against your drive (broken paths, orphaned entries, untagged tracks) and walks the filesystem for a full physical inventory. Feeds all downstream tools. |
 | 🏷 | **Tag Tracks** | Analyzes the actual audio waveform and writes BPM and musical key into the file tags permanently. Tags survive any database rebuild and work in any software. |
 | 🔎 | **Find Duplicates** | Acoustic fingerprinting via Chromaprint. Finds the same recording regardless of filename, bitrate, or format — not filename matching, actual audio content comparison. |
@@ -49,8 +46,8 @@ RekitBox fills the gaps Rekordbox leaves open. It reads and writes the Rekordbox
 
 ### Optional tools
 
-| | Tool | What it does |
-|--|------|-------------|
+| Icon | Tool | What it does |
+| --- | --- | --- |
 | 📢 | **Normalize** | Measures integrated loudness (EBU R128) and re-encodes tracks outside your target. Originals preserved as `.bak` until verified. |
 | 🔄 | **Convert Format** | Re-encodes a folder of audio files to a target format before importing. |
 | 🗂 | **Organize** | De-fragments your library into `Artist / Album / Track` folder structure using embedded tags. |
@@ -88,6 +85,7 @@ Chain any combination of tools into one automated run. Choose **auto mode** (run
 RekitGo is intentionally kept in this same repository (`ios/RekitGo`) rather than split into a separate repo.
 
 Why this is the current default:
+
 - RekitGo depends directly on RekitBox's `/api/mobile/*` surface and auth flow
 - Backend/mobile changes are easier to ship safely when versioned together
 - One repo keeps release coordination and API compatibility checks in one place
@@ -174,7 +172,7 @@ Create a release with a notes file:
 ## Under the hood
 
 | Library | Purpose |
-|---------|---------|
+| --- | --- |
 | [librosa](https://librosa.org) | BPM detection (beat tracking) and key detection (Krumhansl-Schmuckler on chroma features) |
 | [Chromaprint / fpcalc](https://acoustid.org/chromaprint) | Acoustic fingerprinting for duplicate detection |
 | [pyrekordbox](https://github.com/dylanljones/pyrekordbox) | Direct read/write access to the Rekordbox SQLite database |

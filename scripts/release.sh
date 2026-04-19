@@ -15,6 +15,13 @@ RELEASE_REMOTE="${RELEASE_REMOTE:-origin}"
 RELEASE_WAIT_SECONDS="${RELEASE_WAIT_SECONDS:-300}"
 RELEASE_WAIT_INTERVAL="${RELEASE_WAIT_INTERVAL:-5}"
 ZIP_ASSET_NAME="${RELEASE_ZIP_ASSET:-RekitBox.zip}"
+
+# VS Code tasks or non-interactive shells may not export SHELL, which causes
+# noisy GitHub CLI tip messages about unknown shell targets.
+if [[ -z "${SHELL:-}" ]]; then
+  export SHELL="/bin/zsh"
+fi
+
 cd "$REPO_ROOT"
 
 log() {
@@ -39,7 +46,7 @@ if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
 fi
 
 if ! gh auth status >/dev/null 2>&1; then
-  fail "GitHub CLI is not authenticated. Run: gh auth login"
+  fail "GitHub CLI is not authenticated. Run: SHELL=/bin/zsh gh auth login --hostname github.com --git-protocol https --web"
 fi
 
 if [[ ! -f ".github/workflows/release-zip.yml" ]]; then
