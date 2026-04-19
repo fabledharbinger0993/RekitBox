@@ -913,11 +913,33 @@
         </div>
       </div>
       <div class="btn-row">
+        <button class="btn" id="btn-rename-probe" onclick="runRenameProbe()">
+          Probe Ambiguities
+        </button>
         <button class="btn btn-primary" id="btn-rename" onclick="runRename()">
           <img src="/static/icon-filename.png?v=2.0.0" style="width:16px;height:16px;filter:brightness(0) invert(1)" alt="">
           Clean File Names
         </button>
       </div>
+    </div>
+  </div>
+
+  <div id="rename-learn-backdrop"></div>
+  <div class="rename-learn-modal" id="rename-learn-modal">
+    <div class="rename-learn-head">
+      <div>
+        <div class="rename-learn-title">Rename Preflight</div>
+        <div class="rename-learn-sub" id="rename-learn-subtitle"></div>
+      </div>
+      <button class="rename-learn-close" type="button" onclick="closeRenamePreflightModal()">✕</button>
+    </div>
+    <div class="rename-learn-body">
+      <div class="rename-learn-summary" id="rename-learn-summary"></div>
+      <div class="rename-learn-list" id="rename-learn-list"></div>
+    </div>
+    <div class="rename-learn-foot">
+      <button class="btn btn-ghost" type="button" onclick="closeRenamePreflightModal()">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="applyRenamePreflightAndRun()">Apply Decisions + Rename</button>
     </div>
   </div>
 

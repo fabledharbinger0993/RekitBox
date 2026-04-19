@@ -1264,6 +1264,7 @@ def cmd_rename(args: argparse.Namespace) -> None:
     renamed = sum(1 for r in results if r.action == "renamed")
     skipped = sum(1 for r in results if r.action == "no_change")
     collisions = sum(1 for r in results if r.action == "collision_numbered")
+    quarantined = sum(1 for r in results if r.action == "quarantined")
     errors = sum(1 for r in results if r.action == "error")
 
     if dry_run:
@@ -1278,6 +1279,8 @@ def cmd_rename(args: argparse.Namespace) -> None:
             lines.append(f"  {skipped} already have clean names — would be left alone.")
         if collisions:
             lines.append(f"  {collisions} would get numbered suffixes to avoid clashes (e.g. title_1.mp3).")
+        if quarantined:
+            lines.append(f"  {quarantined} unresolved files would be moved to No-Name tracks for Tagging.")
         if errors:
             lines.append(f"  {errors} had errors — check the log above.")
         lines += ["", "Nothing has been renamed. Uncheck \"Dry Run\" and run again to execute."]
@@ -1289,6 +1292,8 @@ def cmd_rename(args: argparse.Namespace) -> None:
             lines.append(f"{skipped} already had clean names — left alone.")
         if collisions:
             lines.append(f"{collisions} name clashes were handled by numbering (e.g. title_1.mp3).")
+        if quarantined:
+            lines.append(f"{quarantined} unresolved files were moved to No-Name tracks for Tagging.")
         if errors:
             lines.append(f"{errors} files had errors — check the log above.")
         else:

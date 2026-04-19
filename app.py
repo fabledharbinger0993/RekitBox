@@ -808,6 +808,144 @@ def api_rename():
     return _sse_response(cmd, library_root=library_root, step_name="rename")
 
 
+@app.route("/api/rename/probe")
+def api_rename_probe():
+    path = request.args.get("path", "").strip()
+    if not path:
+        return jsonify({"error": "path is required"}), 400
+
+    root = Path(path)
+    if not root.is_dir():
+        return jsonify({"error": f"Not a directory: {path}"}), 400
+
+    top_n = request.args.get("top_n", "5").strip()
+    sample_size = request.args.get("sample_size", "100").strip()
+    try:
+        top_n_int = max(1, min(20, int(top_n)))
+        sample_size_int = max(top_n_int, min(500, int(sample_size)))
+    except ValueError:
+        return jsonify({"error": "top_n and sample_size must be integers"}), 400
+
+    from renamer import probe_ambiguous  # noqa: PLC0415
+
+    candidates = probe_ambiguous(root, top_n=top_n_int, sample_size=sample_size_int)
+    return jsonify({
+        "path": str(root),
+        "top_n": top_n_int,
+        "sample_size": sample_size_int,
+        "candidates": [candidate.to_dict() for candidate in candidates],
+    })
+
+
+@app.route("/api/rename/learn", methods=["POST"])
+def api_rename_learn():
+    data = request.get_json(silent=True) or {}
+    action = str(data.get("action", "")).strip()
+    source_path = str(data.get("source_path", "")).strip()
+    if not action or not source_path:
+        return jsonify({"error": "action and source_path are required"}), 400
+
+    import renamer_learned as _learned  # noqa: PLC0415
+
+    rules = _learned.load()
+
+    if action in ("confirm", "manual"):
+        target_name = str(data.get("target_name", "")).strip()
+        if not target_name:
+            return jsonify({"error": "target_name is required for confirm/manual"}), 400
+        rules.add_manual_rename(source_path, target_name)
+        _learned.harvest_from_confirmation(rules, target_name)
+    elif action == "producer_alias":
+        lowered = str(data.get("token", "")).strip()
+        canonical = str(data.get("canonical", "")).strip()
+        if not lowered or not canonical:
+            return jsonify({"error": "token and canonical are required for producer_alias"}), 400
+        rules.add_producer_alias(lowered, canonical)
+        rules.add_known_producer(canonical)
+    elif action == "quarantine":
+        rules.add_quarantine(source_path)
+        library_root = str(data.get("library_root", "")).strip()
+        if library_root:
+            from renamer import quarantine_track  # noqa: PLC0415
+            moved = quarantine_track(Path(source_path), Path(library_root))
+        else:
+            moved = None
+    else:
+        return jsonify({"error": f"Unsupported action: {action}"}), 400
+
+    _learned.save(rules)
+    response = {
+        "ok": True,
+        "action": action,
+        "source_path": source_path,
+        "history_count": len(rules.history),
+    }
+    if action == "quarantine":
+        response["moved"] = moved
+    return jsonify(response)
+
+
+@app.route("/api/rename/preflight/apply", methods=["POST"])
+def api_rename_preflight_apply():
+    data = request.get_json(silent=True) or {}
+    root_str = str(data.get("path", "")).strip()
+    entries = data.get("entries") or []
+    if not root_str:
+        return jsonify({"error": "path is required"}), 400
+    if not isinstance(entries, list):
+        return jsonify({"error": "entries must be a list"}), 400
+
+    root = Path(root_str)
+    if not root.is_dir():
+        return jsonify({"error": f"Not a directory: {root}"}), 400
+
+    import renamer_learned as _learned  # noqa: PLC0415
+    from renamer import quarantine_track  # noqa: PLC0415
+
+    rules = _learned.load()
+    results = []
+
+    for item in entries:
+        if not isinstance(item, dict):
+            return jsonify({"error": "Each entry must be an object"}), 400
+        action = str(item.get("action", "")).strip()
+        source_path = str(item.get("source_path", "")).strip()
+        if not action or not source_path:
+            return jsonify({"error": "Each entry requires action and source_path"}), 400
+
+        if action == "manual":
+            target_name = str(item.get("target_name", "")).strip()
+            if not target_name:
+                return jsonify({"error": f"target_name is required for {source_path}"}), 400
+            rules.add_manual_rename(source_path, target_name)
+            _learned.harvest_from_confirmation(rules, target_name)
+            results.append({"action": action, "source_path": source_path, "target_name": target_name})
+        elif action == "producer_alias":
+            token = str(item.get("token", "")).strip()
+            canonical = str(item.get("canonical", "")).strip()
+            if not token or not canonical:
+                return jsonify({"error": f"token and canonical are required for {source_path}"}), 400
+            rules.add_producer_alias(token, canonical)
+            rules.add_known_producer(canonical)
+            results.append({"action": action, "source_path": source_path, "token": token, "canonical": canonical})
+        elif action == "quarantine":
+            moved = quarantine_track(Path(source_path), root)
+            rules.add_quarantine(source_path)
+            results.append({"action": action, "source_path": source_path, "moved": moved})
+        elif action == "skip":
+            results.append({"action": action, "source_path": source_path})
+        else:
+            return jsonify({"error": f"Unsupported action: {action}"}), 400
+
+    _learned.save(rules)
+    return jsonify({
+        "ok": True,
+        "path": str(root),
+        "results": results,
+        "history_count": len(rules.history),
+    })
+
+
 @app.route("/api/run/duplicates")
 def api_duplicates():
     paths = [p.strip() for p in request.args.getlist("path") if p.strip()]

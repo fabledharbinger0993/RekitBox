@@ -2,6 +2,7 @@
 let activeSource = null;
 let isRunning    = false;
 let rbRunning    = false;
+let renamePreflightState = null;
 
 /* ── File Browser Panel ─────────────────────────────────────────────────────── */
 let _fbCurrentPath = '/Volumes';
@@ -2646,18 +2647,247 @@ function runRename() {
   const paths = getFolderPaths('rename-pills');
   const dryRun = document.getElementById('rename-dry-run').checked;
   if (!paths.length) { alert('Add a folder to rename files in.'); return; }
+
+  if (!dryRun) {
+    runRenameWithPreflight(paths[0]);
+    return;
+  }
+
+  _executeRename(paths[0], true);
+}
+
+function _executeRename(path, dryRun) {
   const p = new URLSearchParams();
-  p.set('path', paths[0]);
+  p.set('path', path);
   if (!dryRun) p.set('no_dry_run', '1');
   const label = dryRun
     ? 'Rename Files — Dry Run (preview only)'
     : 'Rename Files — Cleaning file names';
   if (!dryRun) {
-    _saveToolCkpt('rename', { path: paths[0], dryRun: false });
+    _saveToolCkpt('rename', { path, dryRun: false });
     document.getElementById('step-rename')?.querySelector('.tool-resume-banner')?.remove();
   }
   runCommand(`/api/run/rename?${p}`, label,
     ec => { if (ec === 0) _clearToolCkpt('rename'); });
+}
+
+async function runRenameWithPreflight(path) {
+  let data;
+  const p = new URLSearchParams();
+  p.set('path', path);
+  p.set('top_n', '5');
+  p.set('sample_size', '100');
+
+  try {
+    const res = await fetch(`/api/rename/probe?${p}`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Probe failed');
+  } catch (err) {
+    alert(`Could not run the rename preflight.\n\n${err.message || err}`);
+    return;
+  }
+
+  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+  if (!candidates.length) {
+    _executeRename(path, false);
+    return;
+  }
+
+  openRenamePreflightModal(path, data);
+}
+
+function openRenamePreflightModal(path, data) {
+  renamePreflightState = {
+    path,
+    candidates: Array.isArray(data.candidates) ? data.candidates : [],
+    sampleSize: data.sample_size || 100,
+    topN: data.top_n || 5,
+  };
+
+  const subtitle = document.getElementById('rename-learn-subtitle');
+  const summary = document.getElementById('rename-learn-summary');
+  const list = document.getElementById('rename-learn-list');
+  if (!subtitle || !summary || !list) return;
+
+  subtitle.textContent = `${renamePreflightState.topN} most ambiguous files from a stratified sample of ${renamePreflightState.sampleSize} tracks`;
+  summary.textContent = 'Before a live rename, RekitBox pauses on the riskiest filenames. You can confirm the exact filename for this file, teach a producer-attribution casing fix such as Ken@Work, or move truly unidentified tracks into the sibling “No-Name tracks for Tagging” folder. Confirmed-good filenames also feed the known artist and producer dictionaries for future runs.';
+  list.innerHTML = '';
+
+  renamePreflightState.candidates.forEach((candidate, index) => {
+    const row = document.createElement('div');
+    row.className = 'rename-learn-row';
+    row.dataset.sourcePath = candidate.source_path;
+    row.dataset.proposedMix = candidate.proposed_mix || '';
+
+    const why = (candidate.reasons || []).join(', ');
+    row.innerHTML = `
+      <div class="rename-learn-rowhead">
+        <div>
+          <div class="rename-learn-rank">Case ${index + 1}</div>
+          <div class="rename-learn-source">${escapeHtml(candidate.source_name || candidate.source_path || '')}</div>
+        </div>
+        <div class="rename-learn-score">Ambiguity ${candidate.score ?? 0}</div>
+      </div>
+      <div class="rename-learn-proposed"><strong>Current proposal:</strong> <code>${escapeHtml(candidate.proposed_filename || '')}</code></div>
+      <div class="rename-learn-why"><strong>Why it surfaced:</strong> ${escapeHtml(why || 'Complex filename')}</div>
+      <div class="rename-learn-controls">
+        <select class="rename-learn-select">
+          <option value="manual">Confirm or correct exact filename</option>
+          <option value="producer_alias">Teach producer-attribution casing</option>
+          <option value="guess">Use current guess without teaching</option>
+          <option value="quarantine">Move to No-Name tracks for Tagging</option>
+        </select>
+        <input class="rename-learn-input" type="text" value="${escapeHtmlAttr(candidate.proposed_filename || '')}" placeholder="Artist: Title.mp3">
+      </div>
+      <div class="rename-learn-note">Exact teaching is path-specific. Producer alias only affects that attribution token. Nothing here creates a blanket release-code rule.</div>
+    `;
+
+    const select = row.querySelector('.rename-learn-select');
+    const input = row.querySelector('.rename-learn-input');
+    const updateRowMode = () => {
+      if (select.value === 'manual') {
+        input.disabled = false;
+        input.placeholder = 'Artist: Title.mp3';
+        input.value = candidate.proposed_filename || '';
+      } else if (select.value === 'producer_alias') {
+        input.disabled = false;
+        input.placeholder = 'Producer name with correct casing';
+        input.value = extractProducerAliasToken(candidate.proposed_mix || '');
+      } else {
+        input.disabled = true;
+      }
+    };
+    select.addEventListener('change', updateRowMode);
+    updateRowMode();
+
+    list.appendChild(row);
+  });
+
+  document.getElementById('rename-learn-backdrop')?.classList.add('open');
+  document.getElementById('rename-learn-modal')?.classList.add('open');
+}
+
+function closeRenamePreflightModal() {
+  document.getElementById('rename-learn-backdrop')?.classList.remove('open');
+  document.getElementById('rename-learn-modal')?.classList.remove('open');
+  renamePreflightState = null;
+}
+
+async function applyRenamePreflightAndRun() {
+  if (!renamePreflightState) return;
+  const list = document.getElementById('rename-learn-list');
+  if (!list) return;
+
+  const entries = [];
+  for (const row of list.querySelectorAll('.rename-learn-row')) {
+    const sourcePath = row.dataset.sourcePath;
+    const proposedMix = row.dataset.proposedMix || '';
+    const action = row.querySelector('.rename-learn-select')?.value || 'guess';
+    const input = row.querySelector('.rename-learn-input');
+    const targetName = input?.value.trim() || '';
+
+    if (action === 'manual') {
+      if (!targetName) {
+        alert('Every exact rename needs a filename. Fill it in or switch that row to another action.');
+        input?.focus();
+        return;
+      }
+      entries.push({ action: 'manual', source_path: sourcePath, target_name: targetName });
+    } else if (action === 'producer_alias') {
+      const token = extractProducerAliasToken(proposedMix);
+      if (!targetName) {
+        alert('Producer alias fixes need the producer name with the correct casing.');
+        input?.focus();
+        return;
+      }
+      if (!token) {
+        alert('This row does not have a clear producer attribution token to learn from. Use exact filename instead.');
+        return;
+      }
+      entries.push({ action: 'producer_alias', source_path: sourcePath, token, canonical: targetName });
+    } else if (action === 'quarantine') {
+      entries.push({ action: 'quarantine', source_path: sourcePath });
+    } else {
+      entries.push({ action: 'skip', source_path: sourcePath });
+    }
+  }
+
+  try {
+    const res = await fetch('/api/rename/preflight/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: renamePreflightState.path, entries }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not apply rename decisions');
+  } catch (err) {
+    alert(`Could not apply the rename preflight decisions.\n\n${err.message || err}`);
+    return;
+  }
+
+  const path = renamePreflightState.path;
+  closeRenamePreflightModal();
+  _executeRename(path, false);
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function escapeHtmlAttr(text) {
+  return escapeHtml(text).replaceAll('\n', ' ').replaceAll('\r', ' ');
+}
+
+function extractProducerAliasToken(text) {
+  return String(text || '')
+    .replace(/\s+(remix|dub|edit|mix|rework|version|remaster|bootleg|re-edit|radio\s+edit|extended\s+mix)\s*$/i, '')
+    .trim();
+}
+
+async function runRenameProbe() {
+  const paths = getFolderPaths('rename-pills');
+  if (!paths.length) { alert('Add a folder to probe.'); return; }
+
+  const p = new URLSearchParams();
+  p.set('path', paths[0]);
+  p.set('top_n', '5');
+  p.set('sample_size', '100');
+
+  let data;
+  try {
+    const res = await fetch(`/api/rename/probe?${p}`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Probe failed');
+  } catch (err) {
+    alert(`Could not probe rename ambiguities.\n\n${err.message || err}`);
+    return;
+  }
+
+  const lines = [];
+  lines.push(`Probe sample: ${data.sample_size} files`);
+  lines.push(`Top candidates shown: ${data.top_n}`);
+  lines.push('');
+
+  if (!data.candidates || data.candidates.length === 0) {
+    lines.push('No probe candidates found.');
+    lines.push('This usually means the current parser already looks confident across the sampled files.');
+  } else {
+    data.candidates.forEach((candidate, index) => {
+      lines.push(`${index + 1}. ${candidate.source_name}`);
+      lines.push(`   proposed → ${candidate.proposed_filename}`);
+      if (candidate.reasons && candidate.reasons.length) {
+        lines.push(`   why      → ${candidate.reasons.join(', ')}`);
+      }
+      lines.push('');
+    });
+  }
+
+  openReportModal('Rename Probe — Most Ambiguous', lines.join('\n'), null);
 }
 
 /* ── Prune Duplicates ──────────────────────────────────────────────────────── */
